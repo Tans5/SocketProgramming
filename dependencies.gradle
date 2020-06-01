@@ -32,7 +32,7 @@ versions.fragmentmanger = "2.8.2"
 versions.timber = "4.7.1"
 versions.camerax = '1.0.0-beta04'
 versions.zxing = '3.4.0'
-versions.tadapter = '0.6.2'
+versions.tadapter = '0.7.0'
 
 def view = [:]
 // androidx view

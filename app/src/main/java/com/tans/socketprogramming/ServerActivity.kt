@@ -53,13 +53,15 @@ class ServerActivity : BaseActivity() {
     }
 
     fun sendBroadCast(): Job {
-        return launch {
+        return launch (Dispatchers.IO) {
+            val serverSocket = ServerSocket()
+
             while (true) {
                 val j = launch {
                     repeat(254) { i ->
                         val clientNum = ip[3]
                         if (clientNum != i + 1) {
-                            launch(Dispatchers.IO) {
+                            launch {
                                 val broadcastServerIp = IntArray(4) { index ->
                                     if (index == 3) {
                                         i + 1

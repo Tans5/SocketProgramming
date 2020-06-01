@@ -1,6 +1,8 @@
 package com.tans.socketprogramming
 
 import io.reactivex.Observable
+import io.reactivex.Single
+import io.reactivex.disposables.Disposable
 import kotlinx.coroutines.*
 import java.net.*
 import kotlin.coroutines.*
@@ -21,6 +23,14 @@ suspend fun ServerSocket.acceptSuspend(workDispatcher: CoroutineDispatcher = Dis
         println("ServerSocket accept error: $e")
         null
     }
+}
+
+suspend fun ServerSocket.bindSuspend(endPoint: InetSocketAddress, backlog: Int, workDispatcher: CoroutineDispatcher = Dispatchers.IO): Boolean = try {
+    blockToSuspend(workDispatcher) { bind(endPoint, backlog) }
+    true
+} catch (e: Throwable) {
+    println("ServerSocket bind error: $e")
+    false
 }
 
 suspend fun Socket.connectSuspend(workDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -67,11 +77,40 @@ fun IntArray.toInetByteArray(isRevert: Boolean = false): ByteArray = ByteArray(4
     }
 }
 
-fun <T> Flow<T>.toObservable(coroutineScope: CoroutineScope): Observable<T> {
+fun <T> Flow<T>.toObservable(coroutineScope: CoroutineScope,
+                             context: CoroutineContext = EmptyCoroutineContext): Observable<T> {
     var job: Job? = null
+    var dispose: Disposable? = null
     return Observable.create<T> { emitter ->
-        job = coroutineScope.launch {
-            collect { emitter.onNext(it) }
+        job = coroutineScope.launch(context) {
+            try {
+                collect { emitter.onNext(it) }
+            } finally {
+                dispose?.dispose()
+                job = null
+            }
         }
-    }.doOnSubscribe { job?.cancel() }
+    }.doOnDispose { job?.cancel(); dispose = null }
+        .doOnSubscribe { dispose = dispose }
+}
+
+fun <T> CoroutineScope.asyncAsSingle(context: CoroutineContext = EmptyCoroutineContext,
+                      block: suspend CoroutineScope.() -> T): Single<T> {
+    var job: Job? = null
+    var disposable: Disposable? = null
+    return Single.create<T> { emitter ->
+        job = this.launch(context) {
+            try {
+                val deferred = async(block = block)
+                val result = deferred.await()
+                if (result != null) {
+                    emitter.onSuccess(result)
+                }
+            } finally {
+                disposable?.dispose()
+                job = null
+            }
+        }
+    }.doOnDispose { job?.cancel(); disposable = null}
+        .doOnSubscribe { disposable = it }
 }
