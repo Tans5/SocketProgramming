@@ -54,6 +54,7 @@ dependencies {
     implementation deps.rxJava.runtime
     implementation deps.rxJava.kotlin
     implementation deps.rxAndroid.runtime
+    implementation deps.rxpermissions.runtime
 
     implementation deps.camerax.runtime
     implementation deps.camerax.camera2

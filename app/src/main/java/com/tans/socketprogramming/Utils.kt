@@ -3,7 +3,6 @@ package com.tans.socketprogramming
 import android.content.Context
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
-import android.view.Window
 import android.view.WindowManager
 import androidx.appcompat.app.AlertDialog
 import io.reactivex.Observable
@@ -121,10 +120,21 @@ fun <T> CoroutineScope.asyncAsSingle(context: CoroutineContext = EmptyCoroutineC
         .doOnSubscribe { disposable = it }
 }
 
+suspend fun <T> Single<T>.toSuspend(): T = suspendCancellableCoroutine { cont ->
+    val d = this
+        .subscribe({ t: T ->
+            cont.resume(t)
+        }, { e: Throwable ->
+            cont.resumeWithException(e)
+        })
+    cont.invokeOnCancellation { if (!d.isDisposed) d.dispose() }
+}
+
+
 suspend fun Context.alertDialog(title: String,
                                 msg: String,
                                 cancelable: Boolean = true): Boolean = suspendCancellableCoroutine { cont ->
-    AlertDialog.Builder(this)
+    val d = AlertDialog.Builder(this)
         .setTitle(title)
         .setMessage(msg)
         .setCancelable(cancelable)
@@ -142,13 +152,14 @@ suspend fun Context.alertDialog(title: String,
             }
         }
         .create()
-        .show()
+    d.show()
+    cont.invokeOnCancellation { if (d.isShowing) d.cancel() }
 }
 
 fun Context.createLoadingDialog(): AlertDialog {
     val d = AlertDialog.Builder(this)
         .setCancelable(false)
-        .setView(R.layout.layout_loading)
+        .setView(R.layout.loading_layout)
         .create()
     d.window?.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
     d.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))

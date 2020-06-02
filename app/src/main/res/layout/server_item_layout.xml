@@ -5,7 +5,7 @@
     <data>
         <variable
             name="data"
-            type="com.tans.socketprogramming.ServerInfoModel" />
+            type="com.tans.socketprogramming.ClientActivity.Companion.ServerInfoModel" />
     </data>
 
     <LinearLayout

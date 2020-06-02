@@ -49,10 +49,17 @@ class ServerActivity : BaseActivity() {
                     }
                     val writer = BufferedWriter(OutputStreamWriter(it.getOutputStream()))
                     writer.write(result.toString() + '\n')
+                    writer.flush()
                     if (!result) {
                         waitClientConnect()
+                    } else {
+                        withContext(Dispatchers.Main) {
+                            startActivity(RemoteVideoActivity.createServerIntent(this@ServerActivity, RemoteVideoActivity.Companion.ClientInfo(
+                                clientName, clientAddress)))
+                            overridePendingTransition(0, 0)
+                            finish()
+                        }
                     }
-                    writer.flush()
                 }
             }
         }

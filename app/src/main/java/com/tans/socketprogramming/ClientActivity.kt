@@ -51,7 +51,12 @@ class ClientActivity : BaseActivity() {
                             loadingDialog.show()
                             val result = tryToConnectServer(data)
                             if (result) {
-                                Toast.makeText(this@ClientActivity, "Server accept", Toast.LENGTH_SHORT).show()
+                                startActivity(RemoteVideoActivity.createClientIntent(this@ClientActivity, RemoteVideoActivity.Companion.ServerInfo(
+                                    serverName = data.serverName,
+                                    serverAddress = data.serverAddress
+                                )))
+                                overridePendingTransition(0, 0)
+                                finish()
                             } else {
                                 Toast.makeText(this@ClientActivity, "Connect to ${data.serverAddress.hostAddress} fail, try later.", Toast.LENGTH_SHORT).show()
                             }
@@ -134,14 +139,16 @@ class ClientActivity : BaseActivity() {
         return deferred.await()
     }
 
+    companion object {
+        // 10 seconds.
+        const val SERVER_KEEP_ALIVE_TIME: Long = 10000
+
+        // 5 seconds
+        const val CHECK_SERVERS_DURATION: Long = 5000
+
+        data class ServerInfoModel(val serverName: String,
+                                   val serverAddress: InetAddress,
+                                   val updateTime: Long)
+    }
+
 }
-
-// 10 seconds.
-const val SERVER_KEEP_ALIVE_TIME: Long = 10000
-
-// 5 seconds
-const val CHECK_SERVERS_DURATION: Long = 5000
-
-data class ServerInfoModel(val serverName: String,
-                           val serverAddress: InetAddress,
-                           val updateTime: Long)
