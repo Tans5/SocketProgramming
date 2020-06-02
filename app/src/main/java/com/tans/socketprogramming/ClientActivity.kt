@@ -122,7 +122,8 @@ class ClientActivity : BaseActivity() {
                 socket.use {
                     val writer = BufferedWriter(OutputStreamWriter(socket.getOutputStream()))
                     val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
-                    writer.write("${Build.BRAND} ${Build.MODEL}")
+                    writer.write("${Build.BRAND} ${Build.MODEL}\n")
+                    writer.flush()
                     val accept = reader.readLine()
                     accept == true.toString()
                 }

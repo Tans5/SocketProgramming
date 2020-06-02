@@ -48,7 +48,11 @@ class ServerActivity : BaseActivity() {
                         alertDialog("Connect Request", "Accept $clientName(${clientAddress.hostAddress})")
                     }
                     val writer = BufferedWriter(OutputStreamWriter(it.getOutputStream()))
-                    writer.write(result.toString())
+                    writer.write(result.toString() + '\n')
+                    if (!result) {
+                        waitClientConnect()
+                    }
+                    writer.flush()
                 }
             }
         }
@@ -75,9 +79,8 @@ class ServerActivity : BaseActivity() {
                                 if (result) {
                                     client.use {
                                         val writer = BufferedWriter(OutputStreamWriter(it.getOutputStream()))
-                                        writer.write("${Build.BRAND} ${Build.MODEL}")
-                                        writer.close()
-                                        it.close()
+                                        writer.write("${Build.BRAND} ${Build.MODEL}\n")
+                                        writer.flush()
                                     }
                                 }
                             }
