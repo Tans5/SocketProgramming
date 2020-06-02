@@ -1,5 +1,11 @@
 package com.tans.socketprogramming
 
+import android.content.Context
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
+import android.view.Window
+import android.view.WindowManager
+import androidx.appcompat.app.AlertDialog
 import io.reactivex.Observable
 import io.reactivex.Single
 import io.reactivex.disposables.Disposable
@@ -91,7 +97,7 @@ fun <T> Flow<T>.toObservable(coroutineScope: CoroutineScope,
             }
         }
     }.doOnDispose { job?.cancel(); dispose = null }
-        .doOnSubscribe { dispose = dispose }
+        .doOnSubscribe { dispose = it }
 }
 
 fun <T> CoroutineScope.asyncAsSingle(context: CoroutineContext = EmptyCoroutineContext,
@@ -113,4 +119,38 @@ fun <T> CoroutineScope.asyncAsSingle(context: CoroutineContext = EmptyCoroutineC
         }
     }.doOnDispose { job?.cancel(); disposable = null}
         .doOnSubscribe { disposable = it }
+}
+
+suspend fun Context.alertDialog(title: String,
+                                msg: String,
+                                cancelable: Boolean = true): Boolean = suspendCancellableCoroutine { cont ->
+    AlertDialog.Builder(this)
+        .setTitle(title)
+        .setMessage(msg)
+        .setCancelable(cancelable)
+        .setPositiveButton("OK") { dialog, _ ->
+            dialog.cancel()
+            cont.resume(true)
+        }
+        .setNegativeButton("NO") { dialog, _ ->
+            dialog.cancel()
+            cont.resume(false)
+        }
+        .setOnCancelListener {
+            if (cont.isActive) {
+                cont.resume(false)
+            }
+        }
+        .create()
+        .show()
+}
+
+fun Context.createLoadingDialog(): AlertDialog {
+    val d = AlertDialog.Builder(this)
+        .setCancelable(false)
+        .setView(R.layout.layout_loading)
+        .create()
+    d.window?.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+    d.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+    return d
 }

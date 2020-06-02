@@ -7,7 +7,9 @@ import androidx.core.content.getSystemService
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BroadcastChannel
 import kotlinx.coroutines.channels.Channel
+import java.io.BufferedReader
 import java.io.BufferedWriter
+import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.net.*
 
@@ -18,8 +20,6 @@ import java.net.*
  */
 class ServerActivity : BaseActivity() {
 
-    val clientConnected: BroadcastChannel<Boolean> = BroadcastChannel(Channel.CONFLATED)
-
     val ip: IntArray by lazy {
         (getSystemService<WifiManager>()?.connectionInfo?.ipAddress ?: 0).toIpAddr()
     }
@@ -27,13 +27,8 @@ class ServerActivity : BaseActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_server)
-         val waitJob = waitClientConnect()
-        val sendBroadcastJob = sendBroadCast()
-
-        launch {
-            
-            clientConnected.send(false)
-        }
+        waitClientConnect()
+        sendBroadCast()
 
         val ipString = String.format("%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3])
 
@@ -42,11 +37,18 @@ class ServerActivity : BaseActivity() {
 
     fun waitClientConnect(): Job {
         return launch(Dispatchers.IO) {
-            ServerSocket(MAIN_PORT, MAX_CONNECT).use { serverSocket ->
+            ServerSocket().use { serverSocket ->
+                serverSocket.bindSuspend(InetSocketAddress(null as InetAddress?, MAIN_PORT), MAX_CONNECT)
                 val client = serverSocket.acceptSuspend()
-                if (client != null) {
-                    clientConnected.send(true)
-                    // TODO: Client connect.
+                client?.use {
+                    val reader = BufferedReader(InputStreamReader(it.getInputStream()))
+                    val clientName = reader.readLine()
+                    val clientAddress = it.inetAddress
+                    val result = withContext(Dispatchers.Main) {
+                        alertDialog("Connect Request", "Accept $clientName(${clientAddress.hostAddress})")
+                    }
+                    val writer = BufferedWriter(OutputStreamWriter(it.getOutputStream()))
+                    writer.write(result.toString())
                 }
             }
         }
@@ -54,10 +56,8 @@ class ServerActivity : BaseActivity() {
 
     fun sendBroadCast(): Job {
         return launch (Dispatchers.IO) {
-            val serverSocket = ServerSocket()
-
             while (true) {
-                val j = launch {
+                launch {
                     repeat(254) { i ->
                         val clientNum = ip[3]
                         if (clientNum != i + 1) {
@@ -70,8 +70,7 @@ class ServerActivity : BaseActivity() {
                                     }
                                 }
                                 val client = Socket()
-                                val endPoint = InetSocketAddress(InetAddress
-                                    .getByAddress(broadcastServerIp.toInetByteArray()), BROADCAST_PORT)
+                                val endPoint = InetSocketAddress(InetAddress.getByAddress(broadcastServerIp.toInetByteArray()), BROADCAST_PORT)
                                 val result = client.connectSuspend(endPoint = endPoint)
                                 if (result) {
                                     client.use {
@@ -84,8 +83,7 @@ class ServerActivity : BaseActivity() {
                             }
                         }
                     }
-                }
-                j.join()
+                }.join()
             }
         }
     }

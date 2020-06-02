@@ -1,6 +1,7 @@
 package com.tans.socketprogramming
 
 import android.net.wifi.WifiManager
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.core.content.getSystemService
@@ -14,8 +15,7 @@ import kotlinx.coroutines.channels.BroadcastChannel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.firstOrNull
-import java.io.BufferedReader
-import java.io.InputStreamReader
+import java.io.*
 import java.net.*
 
 /**
@@ -47,7 +47,15 @@ class ClientActivity : BaseActivity() {
                 itemClicks = listOf { binding, _ ->
                     binding.root to { _, data ->
                         asyncAsSingle {
-                            Toast.makeText(this@ClientActivity, data.serverAddress.hostAddress, Toast.LENGTH_SHORT).show()
+                            val loadingDialog = createLoadingDialog()
+                            loadingDialog.show()
+                            val result = tryToConnectServer(data)
+                            if (result) {
+                                Toast.makeText(this@ClientActivity, "Server accept", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(this@ClientActivity, "Connect to ${data.serverAddress.hostAddress} fail, try later.", Toast.LENGTH_SHORT).show()
+                            }
+                            loadingDialog.cancel()
                         }
                     }
                 }
@@ -63,13 +71,12 @@ class ClientActivity : BaseActivity() {
 
     fun receiveBroadcast(): Job {
         return launch(Dispatchers.IO) {
-            val serverSocket = ServerSocket()
-            serverSocket.use { serverSocket ->
+            ServerSocket().use { serverSocket ->
                 val result = serverSocket.bindSuspend(InetSocketAddress(null as InetAddress?, BROADCAST_PORT), Int.MAX_VALUE)
                 if (result) {
                     while (true) {
                         val client = serverSocket.acceptSuspend()
-                        if (client != null) {
+                        client?.use {
                             val reader = BufferedReader(InputStreamReader(client.getInputStream()))
                             val serverName = reader.readLine()
                             val serverInfoModel = ServerInfoModel(
@@ -78,8 +85,6 @@ class ClientActivity : BaseActivity() {
                                 updateTime = System.currentTimeMillis()
                             )
                             updateServerChannel(serverInfoModel)
-                            reader.close()
-                            client.close()
                         }
                         delay(200)
                     }
@@ -107,6 +112,25 @@ class ClientActivity : BaseActivity() {
         val lastServers = serversChannel.asFlow().firstOrNull() ?: emptyList()
         val newServers = lastServers.filter { (System.currentTimeMillis() - it.updateTime) < SERVER_KEEP_ALIVE_TIME }
         serversChannel.send(newServers)
+    }
+
+    suspend fun tryToConnectServer(server: ServerInfoModel): Boolean {
+        val deferred = async(Dispatchers.IO) {
+            val socket = Socket()
+            val result = socket.connectSuspend(endPoint = InetSocketAddress(server.serverAddress, MAIN_PORT))
+            if (result) {
+                socket.use {
+                    val writer = BufferedWriter(OutputStreamWriter(socket.getOutputStream()))
+                    val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+                    writer.write("${Build.BRAND} ${Build.MODEL}")
+                    val accept = reader.readLine()
+                    accept == true.toString()
+                }
+            } else {
+                false
+            }
+        }
+        return deferred.await()
     }
 
 }
