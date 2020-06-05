@@ -50,6 +50,7 @@ dependencies {
     implementation deps.view.design
 
     implementation deps.tadapter.runtime
+    implementation deps.rxutils.runtime
 
     implementation deps.rxJava.runtime
     implementation deps.rxJava.kotlin
@@ -58,6 +59,8 @@ dependencies {
 
     implementation deps.camerax.runtime
     implementation deps.camerax.camera2
+    implementation deps.camerax.lifecycle
+    implementation "androidx.camera:camera-view:1.0.0-alpha11"
 
     testImplementation 'junit:junit:4.12'
     androidTestImplementation 'androidx.test.ext:junit:1.1.1'

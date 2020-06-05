@@ -33,6 +33,7 @@ versions.timber = "4.7.1"
 versions.camerax = '1.0.0-beta04'
 versions.zxing = '3.4.0'
 versions.tadapter = '0.7.0'
+versions.rxutils = "0.1.0"
 
 def view = [:]
 // androidx view
@@ -197,6 +198,7 @@ ext.deps.timber = timber
 def camerax = [:]
 camerax.runtime = "androidx.camera:camera-core:$versions.camerax"
 camerax.camera2 = "androidx.camera:camera-camera2:$versions.camerax"
+camerax.lifecycle = "androidx.camera:camera-lifecycle:$versions.camerax"
 ext.deps.camerax = camerax
 
 // zxing
@@ -208,3 +210,8 @@ ext.deps.zxing = zxing
 def tadapter = [:]
 tadapter.runtime = "com.github.Tans5:tAdapter:$versions.tadapter"
 ext.deps.tadapter = tadapter
+
+// rxutils
+def rxutils = [:]
+rxutils.runtime = "com.github.Tans5:RxUtils:$versions.rxutils"
+ext.deps.rxutils = rxutils
