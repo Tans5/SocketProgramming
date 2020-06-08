@@ -14,6 +14,7 @@ import kotlin.coroutines.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
 import java.lang.Runnable
+import java.nio.ByteBuffer
 
 /**
  *
@@ -164,4 +165,13 @@ fun Context.createLoadingDialog(): AlertDialog {
     d.window?.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
     d.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
     return d
+}
+
+fun ByteArray.toByteBuffer(): ByteBuffer = ByteBuffer.wrap(this)
+
+fun ByteBuffer.toByteArray(): ByteArray {
+    rewind()
+    val result = ByteArray(limit())
+    get(result)
+    return result
 }
