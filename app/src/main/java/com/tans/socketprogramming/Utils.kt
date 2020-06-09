@@ -175,3 +175,9 @@ fun ByteBuffer.toByteArray(): ByteArray {
     get(result)
     return result
 }
+
+fun Int.toByteArray(): ByteArray = ByteArray(4) { i ->
+    (this shr ((3 - i) * 8) and 0xff).toByte()
+}
+
+fun ByteArray.toInt(): Int = ByteBuffer.wrap(this).int

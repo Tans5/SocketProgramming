@@ -86,32 +86,6 @@ class RemoteVideoActivity : BaseActivity() {
             title_toolbar.title = clientInfo.clientName
             serverListen()
         }
-//        withContext(Dispatchers.IO) {
-//            val bufferInfo = MediaCodec.BufferInfo()
-//            cameraXAnalysisResult.consumeEach { result ->
-//                // Decode the result.
-//                println("Result: ${result.size}")
-//                val inputIndex = decoder.dequeueInputBuffer(-1)
-//                if (inputIndex >= 0) {
-//                    val inputBuffer = decoder.getInputBuffer(inputIndex)
-//                    if (inputBuffer != null) {
-//                        inputBuffer.clear()
-//                        inputBuffer.put(result)
-//                        decoder.queueInputBuffer(
-//                            inputIndex,
-//                            0,
-//                            result.size,
-//                            0,
-//                            0
-//                        )
-//                    }
-//                }
-//                val outputIndex = decoder.dequeueOutputBuffer(bufferInfo, 0)
-//                if (outputIndex >= 0) {
-//                    decoder.releaseOutputBuffer(outputIndex, true)
-//                }
-//            }
-//        }
     }
 
     fun serverListen(): Job = launch(Dispatchers.IO) {
@@ -124,13 +98,20 @@ class RemoteVideoActivity : BaseActivity() {
                     val readJob = launch(Dispatchers.IO) {
                         try {
                             val bis = BufferedInputStream(client.getInputStream(), BUFFER_SIZE)
-                            val remoteResult = ByteArray(BUFFER_SIZE)
+                            val sizeByteArray = ByteArray(4)
+                            bis.read(sizeByteArray)
+                            var size = sizeByteArray.toInt()
+                            var remoteResult = ByteArray(size)
                             var resultCount = bis.read(remoteResult)
                             while (resultCount > 0) {
                                 remoteData.send(remoteResult)
+                                bis.read(sizeByteArray)
+                                size = sizeByteArray.toInt()
+                                remoteResult = ByteArray(size)
                                 resultCount = bis.read(remoteResult)
                             }
                         } catch (e: Throwable) {
+                            println(e)
                             withContext(Dispatchers.Main) {
                                 Toast.makeText(this@RemoteVideoActivity, "Client has close connect.", Toast.LENGTH_SHORT).show()
                             }
@@ -143,6 +124,7 @@ class RemoteVideoActivity : BaseActivity() {
                             val bos = client.getOutputStream()
                             cameraXAnalysisResult.asFlow().collect { bytes: ByteArray -> bos.write(bytes) }
                         } catch (e: Throwable) {
+                            println(e)
                             withContext(Dispatchers.Main) {
                                 Toast.makeText(this@RemoteVideoActivity, "Client has close connect.", Toast.LENGTH_SHORT).show()
                             }
@@ -176,13 +158,20 @@ class RemoteVideoActivity : BaseActivity() {
                 val readJob = launch(Dispatchers.IO) {
                     try {
                         val bis = BufferedInputStream(client.getInputStream(), BUFFER_SIZE)
-                        val remoteResult = ByteArray(BUFFER_SIZE)
+                        val sizeByteArray = ByteArray(4)
+                        bis.read(sizeByteArray)
+                        var size = sizeByteArray.toInt()
+                        var remoteResult = ByteArray(size)
                         var resultCount = bis.read(remoteResult)
                         while (resultCount > 0) {
                             remoteData.send(remoteResult)
+                            bis.read(sizeByteArray)
+                            size = sizeByteArray.toInt()
+                            remoteResult = ByteArray(size)
                             resultCount = bis.read(remoteResult)
                         }
                     } catch (e: Throwable) {
+                        println(e)
                         withContext(Dispatchers.Main) {
                             Toast.makeText(this@RemoteVideoActivity, "Server has close connect.", Toast.LENGTH_SHORT).show()
                         }
@@ -195,6 +184,7 @@ class RemoteVideoActivity : BaseActivity() {
                         val bos = client.getOutputStream()
                         cameraXAnalysisResult.asFlow().collect { bytes: ByteArray -> bos.write(bytes) }
                     } catch (e: Throwable) {
+                        println(e)
                         withContext(Dispatchers.Main) {
                             Toast.makeText(this@RemoteVideoActivity, "Server has close connect.", Toast.LENGTH_SHORT).show()
                         }
@@ -392,7 +382,7 @@ class EncoderAnalyzer(val encoder: MediaCodec, val callback: (result: ByteArray,
                 encoder.releaseOutputBuffer(outputIndex, false)
                 outputIndex = encoder.dequeueOutputBuffer(bufferInfo, 0)
                 if (result != null) {
-                    callback(result, image.imageInfo.rotationDegrees)
+                    callback(result.size.toByteArray() + result, image.imageInfo.rotationDegrees)
                 }
             }
         }
