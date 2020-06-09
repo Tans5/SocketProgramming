@@ -122,7 +122,7 @@ class ClientActivity : BaseActivity() {
     suspend fun tryToConnectServer(server: ServerInfoModel): Boolean {
         val deferred = async(Dispatchers.IO) {
             val socket = Socket()
-            val result = socket.connectSuspend(endPoint = InetSocketAddress(server.serverAddress, MAIN_PORT))
+            val result = socket.connectSuspend(endPoint = InetSocketAddress(server.serverAddress, CONFIRM_PORT))
             if (result) {
                 socket.use {
                     val writer = BufferedWriter(OutputStreamWriter(socket.getOutputStream()))

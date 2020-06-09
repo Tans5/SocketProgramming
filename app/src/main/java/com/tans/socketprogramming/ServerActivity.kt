@@ -5,8 +5,6 @@ import android.os.Build
 import android.os.Bundle
 import androidx.core.content.getSystemService
 import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.BroadcastChannel
-import kotlinx.coroutines.channels.Channel
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.InputStreamReader
@@ -38,7 +36,7 @@ class ServerActivity : BaseActivity() {
     fun waitClientConnect(): Job {
         return launch(Dispatchers.IO) {
             ServerSocket().use { serverSocket ->
-                serverSocket.bindSuspend(InetSocketAddress(null as InetAddress?, MAIN_PORT), MAX_CONNECT)
+                serverSocket.bindSuspend(InetSocketAddress(null as InetAddress?, CONFIRM_PORT), MAX_CONNECT)
                 val client = serverSocket.acceptSuspend()
                 client?.use {
                     val reader = BufferedReader(InputStreamReader(it.getInputStream()))

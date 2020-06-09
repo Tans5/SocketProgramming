@@ -35,7 +35,7 @@ fun createDefaultEncodeMediaCodec(): MediaCodec = MediaCodec.createEncoderByType
 }
 
 fun createDefaultDecodeMediaCodec(outputSurface: Surface): MediaCodec = MediaCodec.createDecoderByType(VIDEO_FORMAT).apply {
-    configure(createDefaultDecodeMediaFormat(), outputSurface, null, 0)
+    configure(createDefaultEncodeMediaFormat(), outputSurface, null, 0)
 }
 
 fun MediaCodec.callback(inputAvailable: (mc: MediaCodec, inputBufferId: Int) -> Unit,

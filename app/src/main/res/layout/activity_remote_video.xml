@@ -15,7 +15,7 @@
             android:id="@+id/title_toolbar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:title="RemoveVideo"
+            app:title="RemoteVideo"
             app:titleTextColor="@android:color/white"/>
 
     </com.google.android.material.appbar.AppBarLayout>

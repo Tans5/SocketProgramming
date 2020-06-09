@@ -11,6 +11,7 @@ import android.os.Bundle
 import android.util.Size
 import android.view.Surface
 import android.view.TextureView
+import android.widget.Toast
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
@@ -20,11 +21,19 @@ import com.tans.socketprogramming.video.*
 import com.tbruyelle.rxpermissions2.RxPermissions
 import kotlinx.android.synthetic.main.activity_remote_video.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.BroadcastChannel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.consumeEach
+import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.collect
+import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
 import java.io.Serializable
 import java.lang.Runnable
 import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.ServerSocket
+import java.net.Socket
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 import kotlin.math.round
@@ -33,7 +42,9 @@ class RemoteVideoActivity : BaseActivity() {
 
     val cameraProviderFuture: ListenableFuture<ProcessCameraProvider> by lazy { ProcessCameraProvider.getInstance(this) }
 
-    val cameraXAnalysisResult: Channel<ByteArray> = Channel(Channel.BUFFERED)
+    val cameraXAnalysisResult: BroadcastChannel<ByteArray> = BroadcastChannel(Channel.BUFFERED)
+
+    val remoteData: BroadcastChannel<ByteArray> = BroadcastChannel(Channel.BUFFERED)
 
     val encoder: MediaCodec by lazy { createDefaultEncodeMediaCodec() }
     val decoder: MediaCodec by lazy { createDefaultDecodeMediaCodec(Surface(remote_preview_view.surfaceTexture)) }
@@ -50,99 +61,99 @@ class RemoteVideoActivity : BaseActivity() {
                 .toSuspend()
 
             if (hasPermission) {
-                whenRemotePreviewSurfaceReady()
-                // Init camera
-                val cameraProvider = whenCameraProviderReady()
-                val preview = createPreview()
-                val imageAnalysis = createAnalysis()
-                val cameraSelector = CameraSelector.Builder().requireLensFacing(CameraSelector.LENS_FACING_FRONT).build()
-                cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(this@RemoteVideoActivity, cameraSelector, preview, imageAnalysis)
+                startCamera()
                 workAsServer()
                 workAsClient()
+                decodeRemoteData()
             }
         }
+    }
+
+    suspend fun startCamera() {
+        whenRemotePreviewSurfaceReady()
+        // Init camera
+        val cameraProvider = whenCameraProviderReady()
+        val preview = createPreview()
+        val imageAnalysis = createAnalysis()
+        val cameraSelector = CameraSelector.Builder().requireLensFacing(CameraSelector.LENS_FACING_FRONT).build()
+        cameraProvider.unbindAll()
+        cameraProvider.bindToLifecycle(this@RemoteVideoActivity, cameraSelector, preview, imageAnalysis)
     }
 
     fun workAsServer(): Job = launch {
         val clientInfo = getClientInfo(intent)
         if (clientInfo != null) {
             title_toolbar.title = clientInfo.clientName
-//            decoder.start()
-//            launch(Dispatchers.IO) {
-//                ServerSocket().use { serverSocket ->
-//                    serverSocket.bindSuspend(InetSocketAddress(null as InetAddress?, 1998), MAX_CONNECT)
-//                    val client = serverSocket.acceptSuspend()
-//                    val bufferInfo = MediaCodec.BufferInfo()
-//                    client?.use { client ->
-//
-//                        // Read Job
-//                        val readJob = launch(Dispatchers.IO) {
-//                            val bis = BufferedInputStream(client.getInputStream(), BUFFER_SIZE)
-//                            val result = ByteArray(BUFFER_SIZE)
-//                            var readSize = bis.read(result)
-//                            while (readSize > 0 && client.isConnected) {
-//                                println("Result: ${result.size}")
-//                                val inputIndex = decoder.dequeueInputBuffer(-1)
-//                                if (inputIndex >= 0) {
-//                                    val inputBuffer = decoder.getInputBuffer(inputIndex)
-//                                    if (inputBuffer != null) {
-//                                        inputBuffer.clear()
-//                                        inputBuffer.put(result)
-//                                        decoder.queueInputBuffer(
-//                                            inputIndex,
-//                                            0,
-//                                            readSize,
-//                                            0,
-//                                            0
-//                                        )
-//                                    }
-//                                }
-//                                val outputIndex = decoder.dequeueOutputBuffer(bufferInfo, 0)
-//                                if (outputIndex >= 0) {
-//                                    decoder.releaseOutputBuffer(outputIndex, true)
-//                                }
-//                                readSize = bis.read(result)
-//                            }
-//                        }
-//
-//                        // Write Job
-//                        val writeJob = launch(Dispatchers.IO) {
-//                            val bos = client.getOutputStream()
-//                            cameraXAnalysisResult.consumeEach { bytes: ByteArray -> if (client.isConnected) bos.write(bytes) }
-//                        }
-//                        readJob.join()
-//                        writeJob.join()
+            serverListen()
+        }
+//        withContext(Dispatchers.IO) {
+//            val bufferInfo = MediaCodec.BufferInfo()
+//            cameraXAnalysisResult.consumeEach { result ->
+//                // Decode the result.
+//                println("Result: ${result.size}")
+//                val inputIndex = decoder.dequeueInputBuffer(-1)
+//                if (inputIndex >= 0) {
+//                    val inputBuffer = decoder.getInputBuffer(inputIndex)
+//                    if (inputBuffer != null) {
+//                        inputBuffer.clear()
+//                        inputBuffer.put(result)
+//                        decoder.queueInputBuffer(
+//                            inputIndex,
+//                            0,
+//                            result.size,
+//                            0,
+//                            0
+//                        )
 //                    }
 //                }
+//                val outputIndex = decoder.dequeueOutputBuffer(bufferInfo, 0)
+//                if (outputIndex >= 0) {
+//                    decoder.releaseOutputBuffer(outputIndex, true)
+//                }
 //            }
+//        }
+    }
 
-        }
-        decoder.start()
-        withContext(Dispatchers.IO) {
-            val bufferInfo = MediaCodec.BufferInfo()
-            cameraXAnalysisResult.consumeEach { result ->
-                // Decode the result.
-                println("Result: ${result.size}")
-                val inputIndex = decoder.dequeueInputBuffer(-1)
-                if (inputIndex >= 0) {
-                    val inputBuffer = decoder.getInputBuffer(inputIndex)
-                    if (inputBuffer != null) {
-                        inputBuffer.clear()
-                        inputBuffer.put(result)
-                        decoder.queueInputBuffer(
-                            inputIndex,
-                            0,
-                            result.size,
-                            0,
-                            0
-                        )
+    fun serverListen(): Job = launch(Dispatchers.IO) {
+        ServerSocket().use { serverSocket ->
+            val hasBind = serverSocket.bindSuspend(InetSocketAddress(null as InetAddress?, VIDEO_PORT), MAX_CONNECT)
+            if (hasBind) {
+                val client = serverSocket.acceptSuspend()
+                client?.use {
+                    // Read
+                    val readJob = launch(Dispatchers.IO) {
+                        try {
+                            val bis = BufferedInputStream(client.getInputStream(), BUFFER_SIZE)
+                            val remoteResult = ByteArray(BUFFER_SIZE)
+                            var resultCount = bis.read(remoteResult)
+                            while (resultCount > 0) {
+                                remoteData.send(remoteResult)
+                                resultCount = bis.read(remoteResult)
+                            }
+                        } catch (e: Throwable) {
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(this@RemoteVideoActivity, "Client has close connect.", Toast.LENGTH_SHORT).show()
+                            }
+                        }
                     }
-                }
-                val outputIndex = decoder.dequeueOutputBuffer(bufferInfo, 0)
-                if (outputIndex >= 0) {
-                    decoder.releaseOutputBuffer(outputIndex, true)
-                }
+
+                    // Write
+                    val writeJob = launch(Dispatchers.IO) {
+                        try {
+                            val bos = client.getOutputStream()
+                            cameraXAnalysisResult.asFlow().collect { bytes: ByteArray -> bos.write(bytes) }
+                        } catch (e: Throwable) {
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(this@RemoteVideoActivity, "Client has close connect.", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+
+                    readJob.join()
+                    writeJob.join()
+                } ?: serverListen()
+            } else {
+                serverListen()
             }
         }
     }
@@ -151,54 +162,81 @@ class RemoteVideoActivity : BaseActivity() {
         val serverInfo = getServerInfo(intent)
         if (serverInfo != null) {
             title_toolbar.title = serverInfo.serverName
-//            decoder.start()
-//            launch(Dispatchers.IO) {
-//                val client = Socket()
-//                val endPoint = InetSocketAddress(serverInfo.serverAddress, 1998)
-//                val result = client.connectSuspend(endPoint = endPoint)
-//                if (result) {
-//                    val bufferInfo = MediaCodec.BufferInfo()
-//                    client.use {
-//                        // Read Job
-//                        val readJob = launch(Dispatchers.IO) {
-//                            val bis = BufferedInputStream(client.getInputStream(), BUFFER_SIZE)
-//                            val result = ByteArray(BUFFER_SIZE)
-//                            var readSize = bis.read(result)
-//                            while (readSize > 0) {
-//                                println("Result: ${result.size}")
-//                                val inputIndex = decoder.dequeueInputBuffer(-1)
-//                                if (inputIndex >= 0) {
-//                                    val inputBuffer = decoder.getInputBuffer(inputIndex)
-//                                    if (inputBuffer != null) {
-//                                        inputBuffer.clear()
-//                                        inputBuffer.put(result)
-//                                        decoder.queueInputBuffer(
-//                                            inputIndex,
-//                                            0,
-//                                            readSize,
-//                                            0,
-//                                            0
-//                                        )
-//                                    }
-//                                }
-//                                val outputIndex = decoder.dequeueOutputBuffer(bufferInfo, 0)
-//                                if (outputIndex >= 0) {
-//                                    decoder.releaseOutputBuffer(outputIndex, true)
-//                                }
-//                                readSize = bis.read(result)
-//                            }
-//                        }
-//
-//                        // Write Job
-//                        val writeJob = launch(Dispatchers.IO) {
-//                            val bos = BufferedOutputStream(client.getOutputStream(), BUFFER_SIZE)
-//                            cameraXAnalysisResult.consumeEach { bytes: ByteArray -> bos.write(bytes) }
-//                        }
-//                        readJob.join()
-//                        writeJob.join()
-//                    }
-//                }
-//            }
+            connectServer(serverInfo.serverAddress)
+        }
+    }
+
+    fun connectServer(serverAddr: InetAddress): Job = launch(Dispatchers.IO) {
+        val client = Socket()
+        val endPoint = InetSocketAddress(serverAddr, VIDEO_PORT)
+        val connectResult = client.connectSuspend(endPoint = endPoint)
+        if (connectResult) {
+            client.use {
+                // Read
+                val readJob = launch(Dispatchers.IO) {
+                    try {
+                        val bis = BufferedInputStream(client.getInputStream(), BUFFER_SIZE)
+                        val remoteResult = ByteArray(BUFFER_SIZE)
+                        var resultCount = bis.read(remoteResult)
+                        while (resultCount > 0) {
+                            remoteData.send(remoteResult)
+                            resultCount = bis.read(remoteResult)
+                        }
+                    } catch (e: Throwable) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(this@RemoteVideoActivity, "Server has close connect.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+
+                // Write
+                val writeJob = launch(Dispatchers.IO) {
+                    try {
+                        val bos = client.getOutputStream()
+                        cameraXAnalysisResult.asFlow().collect { bytes: ByteArray -> bos.write(bytes) }
+                    } catch (e: Throwable) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(this@RemoteVideoActivity, "Server has close connect.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+
+                readJob.join()
+                writeJob.join()
+            }
+        } else {
+            connectServer(serverAddr)
+        }
+    }
+
+    suspend fun decodeRemoteData() = withContext(Dispatchers.IO) {
+        decoder.start()
+        val bufferInfo = MediaCodec.BufferInfo()
+        remoteData.asFlow().collect { bytes ->
+            val inputIndex = try {
+                decoder.dequeueInputBuffer(-1)
+            } catch (e: Throwable) {
+                println(e)
+                return@collect
+            }
+            if (inputIndex >= 0) {
+                val inputBuffer = decoder.getInputBuffer(inputIndex)
+                if (inputBuffer != null) {
+                    inputBuffer.clear()
+                    inputBuffer.put(bytes)
+                    decoder.queueInputBuffer(
+                        inputIndex,
+                        0,
+                        bytes.size,
+                        0,
+                        0
+                    )
+                }
+            }
+            val outputIndex = decoder.dequeueOutputBuffer(bufferInfo, 0)
+            if (outputIndex >= 0) {
+                decoder.releaseOutputBuffer(outputIndex, true)
+            }
         }
     }
 
@@ -250,7 +288,7 @@ class RemoteVideoActivity : BaseActivity() {
     @SuppressLint("RestrictedApi")
     fun createAnalysis(): ImageAnalysis {
         val imageAnalysis = ImageAnalysis.Builder()
-            .setBackpressureStrategy(ImageAnalysis.STRATEGY_BLOCK_PRODUCER)
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             .setMaxResolution(Size(VIDEO_WITH, VIDEO_HEIGHT))
             .setTargetRotation(Surface.ROTATION_0)
             .build()
