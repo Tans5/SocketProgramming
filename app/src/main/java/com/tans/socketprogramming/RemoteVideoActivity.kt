@@ -104,14 +104,15 @@ class RemoteVideoActivity : BaseActivity() {
                             var remoteResult = ByteArray(size)
                             var resultCount = bis.read(remoteResult)
                             while (resultCount > 0) {
-                                remoteData.send(remoteResult)
+                                // remoteData.send(remoteResult)
+                                println("Remote Size: $size")
                                 bis.read(sizeByteArray)
                                 size = sizeByteArray.toInt()
                                 remoteResult = ByteArray(size)
                                 resultCount = bis.read(remoteResult)
                             }
                         } catch (e: Throwable) {
-                            println(e)
+                            e.printStackTrace()
                             withContext(Dispatchers.Main) {
                                 Toast.makeText(this@RemoteVideoActivity, "Client has close connect.", Toast.LENGTH_SHORT).show()
                             }
@@ -124,7 +125,7 @@ class RemoteVideoActivity : BaseActivity() {
                             val bos = client.getOutputStream()
                             cameraXAnalysisResult.asFlow().collect { bytes: ByteArray -> bos.write(bytes) }
                         } catch (e: Throwable) {
-                            println(e)
+                            e.printStackTrace()
                             withContext(Dispatchers.Main) {
                                 Toast.makeText(this@RemoteVideoActivity, "Client has close connect.", Toast.LENGTH_SHORT).show()
                             }
@@ -159,19 +160,21 @@ class RemoteVideoActivity : BaseActivity() {
                     try {
                         val bis = BufferedInputStream(client.getInputStream(), BUFFER_SIZE)
                         val sizeByteArray = ByteArray(4)
-                        bis.read(sizeByteArray)
+                        bis.read(sizeByteArray, 0, 4)
                         var size = sizeByteArray.toInt()
+                        println("Remote Size: $size")
                         var remoteResult = ByteArray(size)
-                        var resultCount = bis.read(remoteResult)
+                        var resultCount = bis.read(remoteResult, 0, size)
                         while (resultCount > 0) {
-                            remoteData.send(remoteResult)
-                            bis.read(sizeByteArray)
+                            // remoteData.send(remoteResult)
+                            bis.read(sizeByteArray, 0, 4)
                             size = sizeByteArray.toInt()
+                            println("Remote Size: $size")
                             remoteResult = ByteArray(size)
-                            resultCount = bis.read(remoteResult)
+                            resultCount = bis.read(remoteResult, 0, size)
                         }
                     } catch (e: Throwable) {
-                        println(e)
+                        e.printStackTrace()
                         withContext(Dispatchers.Main) {
                             Toast.makeText(this@RemoteVideoActivity, "Server has close connect.", Toast.LENGTH_SHORT).show()
                         }
@@ -184,7 +187,7 @@ class RemoteVideoActivity : BaseActivity() {
                         val bos = client.getOutputStream()
                         cameraXAnalysisResult.asFlow().collect { bytes: ByteArray -> bos.write(bytes) }
                     } catch (e: Throwable) {
-                        println(e)
+                        e.printStackTrace()
                         withContext(Dispatchers.Main) {
                             Toast.makeText(this@RemoteVideoActivity, "Server has close connect.", Toast.LENGTH_SHORT).show()
                         }
@@ -206,7 +209,7 @@ class RemoteVideoActivity : BaseActivity() {
             val inputIndex = try {
                 decoder.dequeueInputBuffer(-1)
             } catch (e: Throwable) {
-                println(e)
+                e.printStackTrace()
                 return@collect
             }
             if (inputIndex >= 0) {
@@ -382,6 +385,7 @@ class EncoderAnalyzer(val encoder: MediaCodec, val callback: (result: ByteArray,
                 encoder.releaseOutputBuffer(outputIndex, false)
                 outputIndex = encoder.dequeueOutputBuffer(bufferInfo, 0)
                 if (result != null) {
+                    println("CameraX Size: ${result.size}")
                     callback(result.size.toByteArray() + result, image.imageInfo.rotationDegrees)
                 }
             }
