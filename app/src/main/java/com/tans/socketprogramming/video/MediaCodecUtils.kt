@@ -26,7 +26,7 @@ fun createDefaultEncodeMediaFormat(): MediaFormat {
             setInteger(MediaFormat.KEY_CAPTURE_RATE, VIDEO_FRAME_RATE)
             setInteger(MediaFormat.KEY_COLOR_FORMAT, VIDEO_COLOR_FORMAT)
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, VIDEO_KEY_FRAME_INTERVAL)
-            setInteger(MediaFormat.KEY_BITRATE_MODE, VIDEO_BITRATE_MODE)
+            // setInteger(MediaFormat.KEY_BITRATE_MODE, VIDEO_BITRATE_MODE)
         }
 }
 
