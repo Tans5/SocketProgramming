@@ -13,6 +13,7 @@ import java.net.*
 import kotlin.coroutines.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
+import java.io.InputStream
 import java.lang.Runnable
 import java.nio.ByteBuffer
 
@@ -181,3 +182,16 @@ fun Int.toByteArray(): ByteArray = ByteArray(4) { i ->
 }
 
 fun ByteArray.toInt(): Int = ByteBuffer.wrap(this).int
+
+
+fun InputStream.readWithoutRemain(bytes: ByteArray) = readWithoutRemain(bytes, 0, bytes.size)
+
+fun InputStream.readWithoutRemain(bytes: ByteArray, offset: Int, len: Int) {
+    val readCount = read(bytes, offset, len)
+    if (readCount < len) {
+        val needRead = len - readCount
+        readWithoutRemain(bytes, offset + readCount, needRead)
+    } else {
+        return
+    }
+}

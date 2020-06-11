@@ -99,17 +99,17 @@ class RemoteVideoActivity : BaseActivity() {
                         try {
                             val bis = BufferedInputStream(client.getInputStream(), BUFFER_SIZE)
                             val sizeByteArray = ByteArray(4)
-                            bis.read(sizeByteArray)
+                            bis.readWithoutRemain(sizeByteArray)
                             var size = sizeByteArray.toInt()
                             var remoteResult = ByteArray(size)
-                            var resultCount = bis.read(remoteResult)
-                            while (resultCount > 0) {
-                                // remoteData.send(remoteResult)
+                            bis.readWithoutRemain(remoteResult)
+                            while (size > 0) {
+                                remoteData.send(remoteResult)
                                 println("Remote Size: $size")
-                                bis.read(sizeByteArray)
+                                bis.readWithoutRemain(sizeByteArray)
                                 size = sizeByteArray.toInt()
                                 remoteResult = ByteArray(size)
-                                resultCount = bis.read(remoteResult)
+                                bis.readWithoutRemain(remoteResult)
                             }
                         } catch (e: Throwable) {
                             e.printStackTrace()
@@ -160,18 +160,17 @@ class RemoteVideoActivity : BaseActivity() {
                     try {
                         val bis = BufferedInputStream(client.getInputStream(), BUFFER_SIZE)
                         val sizeByteArray = ByteArray(4)
-                        bis.read(sizeByteArray, 0, 4)
+                        bis.readWithoutRemain(sizeByteArray)
                         var size = sizeByteArray.toInt()
-                        println("Remote Size: $size")
                         var remoteResult = ByteArray(size)
-                        var resultCount = bis.read(remoteResult, 0, size)
-                        while (resultCount > 0) {
-                            // remoteData.send(remoteResult)
-                            bis.read(sizeByteArray, 0, 4)
+                        bis.readWithoutRemain(remoteResult, 0, size)
+                        while (size > 0) {
+                            remoteData.send(remoteResult)
+                            bis.readWithoutRemain(sizeByteArray)
                             size = sizeByteArray.toInt()
                             println("Remote Size: $size")
                             remoteResult = ByteArray(size)
-                            resultCount = bis.read(remoteResult, 0, size)
+                            bis.readWithoutRemain(remoteResult)
                         }
                     } catch (e: Throwable) {
                         e.printStackTrace()

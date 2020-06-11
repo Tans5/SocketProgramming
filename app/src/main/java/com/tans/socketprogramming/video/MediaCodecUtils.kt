@@ -12,15 +12,18 @@ const val VIDEO_FORMAT = MediaFormat.MIMETYPE_VIDEO_AVC
 const val VIDEO_BIT_RATE = 20 * 1024 * 1024
 const val VIDEO_FRAME_RATE = 30
 const val VIDEO_KEY_FRAME_INTERVAL = 30
-const val VIDEO_BITRATE_MODE = MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CQ
+const val VIDEO_BITRATE_MODE = MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR
 // NV12/NV21
 const val VIDEO_COLOR_FORMAT = MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible
 
 fun createDefaultEncodeMediaFormat(): MediaFormat {
     return MediaFormat.createVideoFormat(VIDEO_FORMAT, VIDEO_WITH, VIDEO_HEIGHT)
         .apply {
+            setInteger(MediaFormat.KEY_WIDTH, VIDEO_WITH)
+            setInteger(MediaFormat.KEY_HEIGHT, VIDEO_HEIGHT)
             setInteger(MediaFormat.KEY_BIT_RATE, VIDEO_BIT_RATE)
             setInteger(MediaFormat.KEY_FRAME_RATE, VIDEO_FRAME_RATE)
+            setInteger(MediaFormat.KEY_CAPTURE_RATE, VIDEO_FRAME_RATE)
             setInteger(MediaFormat.KEY_COLOR_FORMAT, VIDEO_COLOR_FORMAT)
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, VIDEO_KEY_FRAME_INTERVAL)
             setInteger(MediaFormat.KEY_BITRATE_MODE, VIDEO_BITRATE_MODE)
@@ -35,7 +38,7 @@ fun createDefaultEncodeMediaCodec(): MediaCodec = MediaCodec.createEncoderByType
 }
 
 fun createDefaultDecodeMediaCodec(outputSurface: Surface): MediaCodec = MediaCodec.createDecoderByType(VIDEO_FORMAT).apply {
-    configure(createDefaultEncodeMediaFormat(), outputSurface, null, 0)
+    configure(createDefaultDecodeMediaFormat(), outputSurface, null, 0)
 }
 
 fun MediaCodec.callback(inputAvailable: (mc: MediaCodec, inputBufferId: Int) -> Unit,
