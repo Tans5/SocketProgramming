@@ -77,7 +77,7 @@ class RemoteVideoActivity : BaseActivity() {
         val encodePreview = createEncodePreview()
         val cameraSelector = CameraSelector.Builder().requireLensFacing(CameraSelector.LENS_FACING_FRONT).build()
         cameraProvider.unbindAll()
-        cameraProvider.bindToLifecycle(this@RemoteVideoActivity, cameraSelector, preview, encodePreview)
+        cameraProvider.bindToLifecycle(this@RemoteVideoActivity, cameraSelector, encodePreview, preview)
     }
 
     fun workAsServer(): Job = launch {
@@ -248,6 +248,8 @@ class RemoteVideoActivity : BaseActivity() {
             if (outputIndex >= 0) {
                 decoder.releaseOutputBuffer(outputIndex, true)
                 println("Has decode remote data: ${bytes.size}")
+            } else {
+                println("Decode remote data fail: ${bytes.size}")
             }
         }
     }
@@ -289,27 +291,33 @@ class RemoteVideoActivity : BaseActivity() {
         }
     }
 
+    @SuppressLint("RestrictedApi")
     fun createPreview(): Preview {
         val preview = Preview.Builder()
             .setTargetRotation(Surface.ROTATION_90)
             .build()
-        preview.setSurfaceProvider { it.provideSurface(me_preview_view.holder.surface, Dispatchers.IO.asExecutor(), Consumer {  }) }
+        preview.setSurfaceProvider {
+            val sensorRotation = it.camera.cameraInfo.sensorRotationDegrees
+            println("Rotation: $sensorRotation")
+            launch { cameraDegrees.send(sensorRotation) }
+            it.provideSurface(me_preview_view.holder.surface, Dispatchers.IO.asExecutor(), Consumer {  })
+        }
         return preview
     }
 
-//    @SuppressLint("RestrictedApi")
-//    fun createAnalysis(): ImageAnalysis {
-//        val imageAnalysis = ImageAnalysis.Builder()
-//            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-//            .setMaxResolution(Size(VIDEO_WITH, VIDEO_HEIGHT))
-//            .setTargetRotation(Surface.ROTATION_0)
-//            .build()
-//        val encoderAnalyzer = EncoderAnalyzer(encoder) { result, degrees -> runBlocking(Dispatchers.IO) {
-//            cameraXAnalysisResult.send(result to degrees)
-//        } }
-//        imageAnalysis.setAnalyzer(Dispatchers.IO.asExecutor(), encoderAnalyzer)
-//        return imageAnalysis
-//    }
+    @SuppressLint("RestrictedApi")
+    fun createAnalysis(): ImageAnalysis {
+        val imageAnalysis = ImageAnalysis.Builder()
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .setMaxResolution(Size(VIDEO_WITH, VIDEO_HEIGHT))
+            .setTargetRotation(Surface.ROTATION_0)
+            .build()
+        val encoderAnalyzer = EncoderAnalyzer(encoder) { result, degrees -> runBlocking(Dispatchers.IO) {
+            cameraXAnalysisResult.send(result)
+        } }
+        imageAnalysis.setAnalyzer(Dispatchers.IO.asExecutor(), encoderAnalyzer)
+        return imageAnalysis
+    }
 
     @SuppressLint("RestrictedApi")
     fun createEncodePreview(): Preview {
@@ -319,11 +327,7 @@ class RemoteVideoActivity : BaseActivity() {
             .build()
         val encoderSurface = encoder.createInputSurface()
         encoder.start()
-        preview.setSurfaceProvider { request: SurfaceRequest ->
-            val sensorRotation = request.camera.cameraInfo.sensorRotationDegrees
-            println("Rotation: $sensorRotation")
-            launch { cameraDegrees.send(sensorRotation) }
-            request.provideSurface(encoderSurface, Dispatchers.IO.asExecutor(), Consumer {  }) }
+        preview.setSurfaceProvider { request: SurfaceRequest -> request.provideSurface(encoderSurface, Dispatchers.IO.asExecutor(), Consumer {  }) }
 
         // Get encoder result
         launch(Dispatchers.IO) {
