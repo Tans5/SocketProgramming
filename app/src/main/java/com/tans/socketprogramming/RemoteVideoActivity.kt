@@ -247,6 +247,7 @@ class RemoteVideoActivity : BaseActivity() {
             val outputIndex = decoder.dequeueOutputBuffer(bufferInfo, 0)
             if (outputIndex >= 0) {
                 decoder.releaseOutputBuffer(outputIndex, true)
+                println("Has decode remote data: ${bytes.size}")
             }
         }
     }

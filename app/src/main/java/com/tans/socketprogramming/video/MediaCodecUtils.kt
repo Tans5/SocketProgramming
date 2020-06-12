@@ -8,11 +8,11 @@ import android.view.Surface
 const val VIDEO_WITH = 640
 const val VIDEO_HEIGHT = 480
 const val VIDEO_FORMAT = MediaFormat.MIMETYPE_VIDEO_AVC
-// 2Mbps
-const val VIDEO_BIT_RATE = 2 * 1024 * 1024
+// 1Mbps
+const val VIDEO_BIT_RATE = 1024 * 1024
 const val VIDEO_FRAME_RATE = 30
-// 3s
-const val VIDEO_KEY_FRAME_INTERVAL = 3
+// 10s
+const val VIDEO_KEY_FRAME_INTERVAL = 10
 const val VIDEO_BITRATE_MODE = MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR
 
 const val VIDEO_COLOR_FORMAT = MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface
