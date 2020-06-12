@@ -25,7 +25,7 @@ import kotlinx.coroutines.channels.BroadcastChannel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.withIndex
+import kotlinx.coroutines.flow.first
 import java.io.BufferedInputStream
 import java.io.Serializable
 import java.lang.Runnable
@@ -42,9 +42,10 @@ class RemoteVideoActivity : BaseActivity() {
     val cameraProviderFuture: ListenableFuture<ProcessCameraProvider> by lazy { ProcessCameraProvider.getInstance(this) }
 
 
-    val cameraXAnalysisResult: BroadcastChannel<Pair<ByteArray, Int>> = BroadcastChannel(Channel.BUFFERED)
+    val cameraXAnalysisResult: BroadcastChannel<ByteArray> = BroadcastChannel(Channel.BUFFERED)
 
     val remoteData: BroadcastChannel<ByteArray> = BroadcastChannel(Channel.BUFFERED)
+    val cameraDegrees: BroadcastChannel<Int> = BroadcastChannel(Channel.CONFLATED)
 
     val encoder: MediaCodec by lazy { createDefaultEncodeMediaCodec() }
     val decoder: MediaCodec by lazy { createDefaultDecodeMediaCodec(Surface(remote_preview_view.surfaceTexture)) }
@@ -72,10 +73,11 @@ class RemoteVideoActivity : BaseActivity() {
         // Init camera
         val cameraProvider = whenCameraProviderReady()
         val preview = createPreview()
-        val imageAnalysis = createAnalysis()
+        // val imageAnalysis = createAnalysis()
+        val encodePreview = createEncodePreview()
         val cameraSelector = CameraSelector.Builder().requireLensFacing(CameraSelector.LENS_FACING_FRONT).build()
         cameraProvider.unbindAll()
-        cameraProvider.bindToLifecycle(this@RemoteVideoActivity, cameraSelector, preview, imageAnalysis)
+        cameraProvider.bindToLifecycle(this@RemoteVideoActivity, cameraSelector, preview, encodePreview)
     }
 
     fun workAsServer(): Job = launch {
@@ -124,15 +126,10 @@ class RemoteVideoActivity : BaseActivity() {
                     val writeJob = launch(Dispatchers.IO) {
                         try {
                             val bos = client.getOutputStream()
+                            val degrees = cameraDegrees.asFlow().first()
+                            bos.write(degrees.toByteArray())
                             cameraXAnalysisResult.asFlow()
-                                .withIndex()
-                                .collect { (index, data) ->
-                                    if (index == 0) {
-                                        // Write degrees
-                                        bos.write(data.second.toByteArray())
-                                    }
-                                    bos.write(data.first)
-                                }
+                                .collect { data -> bos.write(data) }
                         } catch (e: Throwable) {
                             e.printStackTrace()
                             withContext(Dispatchers.Main) {
@@ -200,14 +197,10 @@ class RemoteVideoActivity : BaseActivity() {
                 val writeJob = launch(Dispatchers.IO) {
                     try {
                         val bos = client.getOutputStream()
+                        val degrees = cameraDegrees.asFlow().first()
+                        bos.write(degrees.toByteArray())
                         cameraXAnalysisResult.asFlow()
-                            .withIndex().collect { (index, data) ->
-                                if (index == 0) {
-                                    // Write degrees
-                                    bos.write(data.second.toByteArray())
-                                }
-                                bos.write(data.first)
-                            }
+                            .collect { data -> bos.write(data) }
                     } catch (e: Throwable) {
                         e.printStackTrace()
                         withContext(Dispatchers.Main) {
@@ -219,7 +212,6 @@ class RemoteVideoActivity : BaseActivity() {
                         }
                     }
                 }
-
                 readJob.join()
                 writeJob.join()
             }
@@ -304,18 +296,67 @@ class RemoteVideoActivity : BaseActivity() {
         return preview
     }
 
+//    @SuppressLint("RestrictedApi")
+//    fun createAnalysis(): ImageAnalysis {
+//        val imageAnalysis = ImageAnalysis.Builder()
+//            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+//            .setMaxResolution(Size(VIDEO_WITH, VIDEO_HEIGHT))
+//            .setTargetRotation(Surface.ROTATION_0)
+//            .build()
+//        val encoderAnalyzer = EncoderAnalyzer(encoder) { result, degrees -> runBlocking(Dispatchers.IO) {
+//            cameraXAnalysisResult.send(result to degrees)
+//        } }
+//        imageAnalysis.setAnalyzer(Dispatchers.IO.asExecutor(), encoderAnalyzer)
+//        return imageAnalysis
+//    }
+
     @SuppressLint("RestrictedApi")
-    fun createAnalysis(): ImageAnalysis {
-        val imageAnalysis = ImageAnalysis.Builder()
-            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-            .setMaxResolution(Size(VIDEO_WITH, VIDEO_HEIGHT))
-            .setTargetRotation(Surface.ROTATION_0)
+    fun createEncodePreview(): Preview {
+        val preview = Preview.Builder()
+            .setTargetResolution(Size(VIDEO_WITH, VIDEO_HEIGHT))
+            .setTargetRotation(Surface.ROTATION_90)
             .build()
-        val encoderAnalyzer = EncoderAnalyzer(encoder) { result, degrees -> runBlocking(Dispatchers.IO) {
-            cameraXAnalysisResult.send(result to degrees)
-        } }
-        imageAnalysis.setAnalyzer(Dispatchers.IO.asExecutor(), encoderAnalyzer)
-        return imageAnalysis
+        val encoderSurface = encoder.createInputSurface()
+        encoder.start()
+        preview.setSurfaceProvider { request: SurfaceRequest ->
+            val sensorRotation = request.camera.cameraInfo.sensorRotationDegrees
+            println("Rotation: $sensorRotation")
+            launch { cameraDegrees.send(sensorRotation) }
+            request.provideSurface(encoderSurface, Dispatchers.IO.asExecutor(), Consumer {  }) }
+
+        // Get encoder result
+        launch(Dispatchers.IO) {
+            val bufferInfo = MediaCodec.BufferInfo()
+            launch(Dispatchers.IO) {
+                // sync key frame.
+                while (true) {
+                    val result = runCatching {
+                        delay((VIDEO_KEY_FRAME_INTERVAL * 1000).toLong())
+                        val params = Bundle()
+                        params.putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0)
+                        encoder.setParameters(params)
+                    }
+                    if (result.isFailure) { break }
+                }
+            }
+            while (true) {
+                runCatching {
+                    var outputIndex = encoder.dequeueOutputBuffer(bufferInfo, -1)
+                    while (outputIndex >= 0) {
+                        val outputBuffer = encoder.getOutputBuffer(outputIndex)
+                        val result = outputBuffer?.toByteArray()
+                        encoder.releaseOutputBuffer(outputIndex, false)
+                        outputIndex = encoder.dequeueOutputBuffer(bufferInfo, 0)
+                        if (result != null) {
+                            val size = result.size
+                            println("Encode Result Size: ${result.size}")
+                            cameraXAnalysisResult.send((size.toByteArray() + result))
+                        }
+                    }
+                }
+            }
+        }
+        return preview
     }
 
     override fun onDestroy() {
