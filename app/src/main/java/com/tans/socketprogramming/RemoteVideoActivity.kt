@@ -23,8 +23,8 @@ import kotlinx.android.synthetic.main.activity_remote_video.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BroadcastChannel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.flow.asFlow
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import java.io.BufferedInputStream
 import java.io.Serializable
@@ -42,9 +42,9 @@ class RemoteVideoActivity : BaseActivity() {
     val cameraProviderFuture: ListenableFuture<ProcessCameraProvider> by lazy { ProcessCameraProvider.getInstance(this) }
 
 
-    val cameraXAnalysisResult: BroadcastChannel<ByteArray> = BroadcastChannel(Channel.BUFFERED)
+    val cameraXAnalysisResult: Channel<ByteArray> = Channel(Channel.BUFFERED)
 
-    val remoteData: BroadcastChannel<ByteArray> = BroadcastChannel(Channel.BUFFERED)
+    val remoteData: Channel<ByteArray> = Channel(Channel.BUFFERED)
     val cameraDegrees: BroadcastChannel<Int> = BroadcastChannel(Channel.CONFLATED)
 
     val encoder: MediaCodec by lazy { createDefaultEncodeMediaCodec() }
@@ -128,8 +128,7 @@ class RemoteVideoActivity : BaseActivity() {
                             val bos = client.getOutputStream()
                             val degrees = cameraDegrees.asFlow().first()
                             bos.write(degrees.toByteArray())
-                            cameraXAnalysisResult.asFlow()
-                                .collect { data -> bos.write(data) }
+                            cameraXAnalysisResult.consumeEach { data -> bos.write(data) }
                         } catch (e: Throwable) {
                             e.printStackTrace()
                             withContext(Dispatchers.Main) {
@@ -199,8 +198,7 @@ class RemoteVideoActivity : BaseActivity() {
                         val bos = client.getOutputStream()
                         val degrees = cameraDegrees.asFlow().first()
                         bos.write(degrees.toByteArray())
-                        cameraXAnalysisResult.asFlow()
-                            .collect { data -> bos.write(data) }
+                        cameraXAnalysisResult.consumeEach { data -> bos.write(data) }
                     } catch (e: Throwable) {
                         e.printStackTrace()
                         withContext(Dispatchers.Main) {
@@ -223,12 +221,12 @@ class RemoteVideoActivity : BaseActivity() {
     suspend fun decodeRemoteData() = withContext(Dispatchers.IO) {
         decoder.start()
         val bufferInfo = MediaCodec.BufferInfo()
-        remoteData.asFlow().collect { bytes ->
+        remoteData.consumeEach { bytes ->
             val inputIndex = try {
                 decoder.dequeueInputBuffer(-1)
             } catch (e: Throwable) {
                 e.printStackTrace()
-                return@collect
+                return@consumeEach
             }
             if (inputIndex >= 0) {
                 val inputBuffer = decoder.getInputBuffer(inputIndex)
@@ -300,7 +298,7 @@ class RemoteVideoActivity : BaseActivity() {
             val sensorRotation = it.camera.cameraInfo.sensorRotationDegrees
             println("Rotation: $sensorRotation")
             launch { cameraDegrees.send(sensorRotation) }
-            it.provideSurface(me_preview_view.holder.surface, Dispatchers.IO.asExecutor(), Consumer {  })
+            me_preview_view.createSurfaceProvider().onSurfaceRequested(it)
         }
         return preview
     }

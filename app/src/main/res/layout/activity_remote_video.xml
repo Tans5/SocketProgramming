@@ -34,7 +34,7 @@
             app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintBottom_toBottomOf="parent" />
 
-        <SurfaceView
+        <androidx.camera.view.PreviewView
             android:id="@+id/me_preview_view"
             android:layout_width="96dp"
             android:layout_height="128dp"
