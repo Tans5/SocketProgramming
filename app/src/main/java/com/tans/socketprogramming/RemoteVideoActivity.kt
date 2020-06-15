@@ -261,31 +261,35 @@ class RemoteVideoActivity : BaseActivity() {
     }
 
     suspend fun whenRemotePreviewSurfaceReady() = suspendCoroutine<Unit> { cont ->
-        remote_preview_view.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-            override fun onSurfaceTextureSizeChanged(
-                surface: SurfaceTexture?,
-                width: Int,
-                height: Int
-            ) {
+        if (remote_preview_view.isAvailable) {
+            cont.resume(Unit)
+        } else {
+            remote_preview_view.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                override fun onSurfaceTextureSizeChanged(
+                    surface: SurfaceTexture?,
+                    width: Int,
+                    height: Int
+                ) {
+
+                }
+
+                override fun onSurfaceTextureUpdated(surface: SurfaceTexture?) {
+
+                }
+
+                override fun onSurfaceTextureDestroyed(surface: SurfaceTexture?): Boolean {
+                    return true
+                }
+
+                override fun onSurfaceTextureAvailable(
+                    surface: SurfaceTexture?,
+                    width: Int,
+                    height: Int
+                ) {
+                    cont.resume(Unit)
+                }
 
             }
-
-            override fun onSurfaceTextureUpdated(surface: SurfaceTexture?) {
-
-            }
-
-            override fun onSurfaceTextureDestroyed(surface: SurfaceTexture?): Boolean {
-                return true
-            }
-
-            override fun onSurfaceTextureAvailable(
-                surface: SurfaceTexture?,
-                width: Int,
-                height: Int
-            ) {
-                cont.resume(Unit)
-            }
-
         }
     }
 
