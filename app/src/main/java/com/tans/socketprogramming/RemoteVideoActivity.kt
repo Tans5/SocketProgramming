@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Matrix
 import android.graphics.SurfaceTexture
+import android.media.AudioRecord
 import android.media.MediaCodec
 import android.os.Bundle
 import android.util.Size
@@ -17,6 +18,9 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.core.util.Consumer
 import com.google.common.util.concurrent.ListenableFuture
+import com.tans.socketprogramming.audio.AUDIO_BUFFER_SIZE
+import com.tans.socketprogramming.audio.createDefaultAudioRecord
+import com.tans.socketprogramming.audio.createDefaultAudioTrack
 import com.tans.socketprogramming.video.*
 import com.tbruyelle.rxpermissions2.RxPermissions
 import kotlinx.android.synthetic.main.activity_remote_video.*
@@ -33,6 +37,7 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.nio.ByteBuffer
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 import kotlin.math.round
@@ -44,11 +49,16 @@ class RemoteVideoActivity : BaseActivity() {
 
     val cameraXAnalysisResult: Channel<ByteArray> = Channel(Channel.BUFFERED)
 
+    val audioRecordResult: Channel<ByteArray> = Channel(Channel.BUFFERED)
+    val audioTrack = createDefaultAudioTrack()
+
     val remoteData: Channel<ByteArray> = Channel(Channel.BUFFERED)
     val cameraDegrees: BroadcastChannel<Int> = BroadcastChannel(Channel.CONFLATED)
 
-    val encoder: MediaCodec by lazy { createDefaultEncodeMediaCodec() }
-    val decoder: MediaCodec by lazy { createDefaultDecodeMediaCodec(Surface(remote_preview_view.surfaceTexture)) }
+    val videoEncoder: MediaCodec by lazy { createDefaultEncodeMediaCodec() }
+    val videoDecoder: MediaCodec by lazy { createDefaultDecodeMediaCodec(Surface(remote_preview_view.surfaceTexture)) }
+
+    val audioRecord = createDefaultAudioRecord()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -61,9 +71,17 @@ class RemoteVideoActivity : BaseActivity() {
 
             if (hasPermission) {
                 startCamera()
+                startAudioRecord()
                 workAsServer()
                 workAsClient()
                 decodeRemoteData()
+                withContext(Dispatchers.IO) {
+                    audioTrack.play()
+                    audioRecordResult.consumeEach { audioResult ->
+                        println("AudioResult Size: ${audioResult.size}")
+                        audioTrack.write(audioResult, 0, AUDIO_BUFFER_SIZE)
+                    }
+                }
             }
         }
     }
@@ -78,6 +96,21 @@ class RemoteVideoActivity : BaseActivity() {
         val cameraSelector = CameraSelector.Builder().requireLensFacing(CameraSelector.LENS_FACING_FRONT).build()
         cameraProvider.unbindAll()
         cameraProvider.bindToLifecycle(this@RemoteVideoActivity, cameraSelector, encodePreview, preview)
+    }
+
+    fun startAudioRecord() {
+        audioRecord.startRecording()
+        launch {
+            val result = ByteArray(AUDIO_BUFFER_SIZE)
+            while (audioRecord.state == AudioRecord.STATE_INITIALIZED) {
+                val job = launch(Dispatchers.IO) {
+                    val audioResult = audioRecord.read(result, 0, AUDIO_BUFFER_SIZE)
+                    println("AudioResult: $audioResult")
+                    audioRecordResult.send(result)
+                }
+                job.join()
+            }
+        }
     }
 
     fun workAsServer(): Job = launch {
@@ -117,7 +150,7 @@ class RemoteVideoActivity : BaseActivity() {
                         } catch (e: Throwable) {
                             e.printStackTrace()
                             withContext(Dispatchers.Main) {
-                                Toast.makeText(this@RemoteVideoActivity, "Client has close connect.", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(this@RemoteVideoActivity, "Client has closed connect.", Toast.LENGTH_SHORT).show()
                             }
                         }
                     }
@@ -132,7 +165,7 @@ class RemoteVideoActivity : BaseActivity() {
                         } catch (e: Throwable) {
                             e.printStackTrace()
                             withContext(Dispatchers.Main) {
-                                Toast.makeText(this@RemoteVideoActivity, "Client has close connect.", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(this@RemoteVideoActivity, "Client has closed connect.", Toast.LENGTH_SHORT).show()
                             }
                         }
                     }
@@ -185,7 +218,7 @@ class RemoteVideoActivity : BaseActivity() {
                         withContext(Dispatchers.Main) {
                             Toast.makeText(
                                 this@RemoteVideoActivity,
-                                "Server has close connect.",
+                                "Server has closed connect.",
                                 Toast.LENGTH_SHORT
                             ).show()
                         }
@@ -204,7 +237,7 @@ class RemoteVideoActivity : BaseActivity() {
                         withContext(Dispatchers.Main) {
                             Toast.makeText(
                                 this@RemoteVideoActivity,
-                                "Server has close connect.",
+                                "Server has closed connect.",
                                 Toast.LENGTH_SHORT
                             ).show()
                         }
@@ -218,22 +251,22 @@ class RemoteVideoActivity : BaseActivity() {
         }
     }
 
-    suspend fun decodeRemoteData() = withContext(Dispatchers.IO) {
-        decoder.start()
+    fun decodeRemoteData() = launch(Dispatchers.IO) {
+        videoDecoder.start()
         val bufferInfo = MediaCodec.BufferInfo()
         remoteData.consumeEach { bytes ->
             val inputIndex = try {
-                decoder.dequeueInputBuffer(-1)
+                videoDecoder.dequeueInputBuffer(-1)
             } catch (e: Throwable) {
                 e.printStackTrace()
                 return@consumeEach
             }
             if (inputIndex >= 0) {
-                val inputBuffer = decoder.getInputBuffer(inputIndex)
+                val inputBuffer = videoDecoder.getInputBuffer(inputIndex)
                 if (inputBuffer != null) {
                     inputBuffer.clear()
                     inputBuffer.put(bytes)
-                    decoder.queueInputBuffer(
+                    videoDecoder.queueInputBuffer(
                         inputIndex,
                         0,
                         bytes.size,
@@ -241,9 +274,9 @@ class RemoteVideoActivity : BaseActivity() {
                         0
                     )
                 }
-                val outputIndex = decoder.dequeueOutputBuffer(bufferInfo, 0)
+                val outputIndex = videoDecoder.dequeueOutputBuffer(bufferInfo, 0)
                 if (outputIndex >= 0) {
-                    decoder.releaseOutputBuffer(outputIndex, true)
+                    videoDecoder.releaseOutputBuffer(outputIndex, true)
                     println("Has decode remote data: ${bytes.size}")
                 } else {
                     println("Decode remote data fail: ${bytes.size}")
@@ -314,7 +347,7 @@ class RemoteVideoActivity : BaseActivity() {
             .setMaxResolution(Size(VIDEO_WITH, VIDEO_HEIGHT))
             .setTargetRotation(Surface.ROTATION_0)
             .build()
-        val encoderAnalyzer = EncoderAnalyzer(encoder) { result, degrees -> runBlocking(Dispatchers.IO) {
+        val encoderAnalyzer = EncoderAnalyzer(videoEncoder) { result, degrees -> runBlocking(Dispatchers.IO) {
             cameraXAnalysisResult.send(result)
         } }
         imageAnalysis.setAnalyzer(Dispatchers.IO.asExecutor(), encoderAnalyzer)
@@ -327,8 +360,8 @@ class RemoteVideoActivity : BaseActivity() {
             .setTargetResolution(Size(VIDEO_WITH, VIDEO_HEIGHT))
             .setTargetRotation(Surface.ROTATION_90)
             .build()
-        val encoderSurface = encoder.createInputSurface()
-        encoder.start()
+        val encoderSurface = videoEncoder.createInputSurface()
+        videoEncoder.start()
         preview.setSurfaceProvider { request: SurfaceRequest -> request.provideSurface(encoderSurface, Dispatchers.IO.asExecutor(), Consumer {  }) }
 
         // Get encoder result
@@ -341,19 +374,19 @@ class RemoteVideoActivity : BaseActivity() {
                         delay((VIDEO_KEY_FRAME_INTERVAL * 1000).toLong())
                         val params = Bundle()
                         params.putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0)
-                        encoder.setParameters(params)
+                        videoEncoder.setParameters(params)
                     }
                     if (result.isFailure) { break }
                 }
             }
             while (true) {
                 runCatching {
-                    var outputIndex = encoder.dequeueOutputBuffer(bufferInfo, -1)
+                    var outputIndex = videoEncoder.dequeueOutputBuffer(bufferInfo, -1)
                     while (outputIndex >= 0) {
-                        val outputBuffer = encoder.getOutputBuffer(outputIndex)
+                        val outputBuffer = videoEncoder.getOutputBuffer(outputIndex)
                         val result = outputBuffer?.toByteArray()
-                        encoder.releaseOutputBuffer(outputIndex, false)
-                        outputIndex = encoder.dequeueOutputBuffer(bufferInfo, 0)
+                        videoEncoder.releaseOutputBuffer(outputIndex, false)
+                        outputIndex = videoEncoder.dequeueOutputBuffer(bufferInfo, 0)
                         if (result != null) {
                             val size = result.size
                             println("Encode Result Size: ${result.size}")
@@ -368,10 +401,14 @@ class RemoteVideoActivity : BaseActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        encoder.stop()
-        encoder.release()
-        decoder.stop()
-        decoder.release()
+        videoEncoder.stop()
+        videoEncoder.release()
+        videoDecoder.stop()
+        videoDecoder.release()
+        audioRecord.stop()
+        audioRecord.release()
+        audioTrack.stop()
+        audioTrack.release()
     }
 
     fun rotationRemoteView(degrees: Int) {
