@@ -37,7 +37,6 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
-import java.nio.ByteBuffer
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 import kotlin.math.round
@@ -70,17 +69,19 @@ class RemoteVideoActivity : BaseActivity() {
                 .toSuspend()
 
             if (hasPermission) {
-                startCamera()
-                startAudioRecord()
-                workAsServer()
-                workAsClient()
-                decodeRemoteData()
-                withContext(Dispatchers.IO) {
-                    audioTrack.play()
-                    audioRecordResult.consumeEach { audioResult ->
-                        println("AudioResult Size: ${audioResult.size}")
-                        audioTrack.write(audioResult, 0, AUDIO_BUFFER_SIZE)
-                    }
+                val connectResult = connectToRemoteDevice()
+                if (connectResult != null) {
+                    startCamera()
+                    // startAudioRecord()
+                    writeAndreadRemoteData(connectResult.first, connectResult.second)
+                    decodeRemoteData()
+//                    withContext(Dispatchers.IO) {
+//                        audioTrack.play()
+//                        audioRecordResult.consumeEach { audioResult ->
+//                            println("AudioResult Size: ${audioResult.size}")
+//                            // audioTrack.write(audioResult, 0, AUDIO_BUFFER_SIZE)
+//                        }
+//                    }
                 }
             }
         }
@@ -113,85 +114,67 @@ class RemoteVideoActivity : BaseActivity() {
         }
     }
 
-    fun workAsServer(): Job = launch {
-        val clientInfo = getClientInfo(intent)
-        if (clientInfo != null) {
-            title_toolbar.title = clientInfo.clientName
-            serverListen()
+    suspend fun connectToRemoteDevice(): Pair<Socket, ServerSocket?>? {
+        val hasConnectJob = async {
+            val clientInfo = getClientInfo(intent)
+            val serverInfo = getServerInfo(intent)
+            when {
+                clientInfo != null -> {
+                    title_toolbar.title = clientInfo.clientName
+                    serverListen()
+                }
+                serverInfo != null -> {
+                    title_toolbar.title = serverInfo.serverName
+                    connectServer(serverInfo.serverAddress) to null
+                }
+                else -> {
+                    null
+                }
+            }
         }
+        return hasConnectJob.await()
     }
 
-    fun serverListen(): Job = launch(Dispatchers.IO) {
-        ServerSocket().use { serverSocket ->
-            val hasBind = serverSocket.bindSuspend(InetSocketAddress(null as InetAddress?, VIDEO_PORT), MAX_CONNECT)
+    suspend fun serverListen(): Pair<Socket, ServerSocket> {
+        val connectJob = async(Dispatchers.IO) {
+            val serverSocket = ServerSocket()
+            val hasBind = serverSocket.bindSuspend(
+                InetSocketAddress(null as InetAddress?, VIDEO_PORT),
+                MAX_CONNECT
+            )
             if (hasBind) {
                 val client = serverSocket.acceptSuspend()
-                client?.use {
-                    // Read
-                    val readJob = launch(Dispatchers.IO) {
-                        try {
-                            val bis = BufferedInputStream(client.getInputStream(), BUFFER_SIZE)
-                            val intByteArray = ByteArray(4)
-                            bis.readWithoutRemain(intByteArray)
-                            val degrees = intByteArray.toInt()
-                            withContext(Dispatchers.Main) { rotationRemoteView(degrees) }
-                            bis.readWithoutRemain(intByteArray)
-                            var size = intByteArray.toInt()
-                            var remoteResult = ByteArray(size)
-                            bis.readWithoutRemain(remoteResult)
-                            while (size > 0) {
-                                remoteData.send(remoteResult)
-                                println("Remote Size: $size")
-                                bis.readWithoutRemain(intByteArray)
-                                size = intByteArray.toInt()
-                                remoteResult = ByteArray(size)
-                                bis.readWithoutRemain(remoteResult)
-                            }
-                        } catch (e: Throwable) {
-                            e.printStackTrace()
-                            withContext(Dispatchers.Main) {
-                                Toast.makeText(this@RemoteVideoActivity, "Client has closed connect.", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    }
-
-                    // Write
-                    val writeJob = launch(Dispatchers.IO) {
-                        try {
-                            val bos = client.getOutputStream()
-                            val degrees = cameraDegrees.asFlow().first()
-                            bos.write(degrees.toByteArray())
-                            cameraXAnalysisResult.consumeEach { data -> bos.write(data) }
-                        } catch (e: Throwable) {
-                            e.printStackTrace()
-                            withContext(Dispatchers.Main) {
-                                Toast.makeText(this@RemoteVideoActivity, "Client has closed connect.", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    }
-
-                    readJob.join()
-                    writeJob.join()
-                } ?: serverListen()
+                if (client != null) {
+                    client to serverSocket
+                } else {
+                    serverSocket.close()
+                    serverListen()
+                }
             } else {
+                serverSocket.close()
                 serverListen()
             }
         }
+        return connectJob.await()
     }
 
-    fun workAsClient(): Job = launch {
-        val serverInfo = getServerInfo(intent)
-        if (serverInfo != null) {
-            title_toolbar.title = serverInfo.serverName
-            connectServer(serverInfo.serverAddress)
+    suspend fun connectServer(serverAddr: InetAddress): Socket {
+        val connectJob = async(Dispatchers.IO) {
+            val client = Socket()
+            val endPoint = InetSocketAddress(serverAddr, VIDEO_PORT)
+            val connectResult = client.connectSuspend(endPoint = endPoint)
+            if (connectResult) {
+                client
+            } else {
+                client.close()
+                connectServer(serverAddr)
+            }
         }
+        return connectJob.await()
     }
 
-    fun connectServer(serverAddr: InetAddress): Job = launch(Dispatchers.IO) {
-        val client = Socket()
-        val endPoint = InetSocketAddress(serverAddr, VIDEO_PORT)
-        val connectResult = client.connectSuspend(endPoint = endPoint)
-        if (connectResult) {
+    fun writeAndreadRemoteData(client: Socket, serverSocket: ServerSocket? = null) = launch(Dispatchers.IO) {
+        try {
             client.use {
                 // Read
                 val readJob = launch(Dispatchers.IO) {
@@ -218,7 +201,7 @@ class RemoteVideoActivity : BaseActivity() {
                         withContext(Dispatchers.Main) {
                             Toast.makeText(
                                 this@RemoteVideoActivity,
-                                "Server has closed connect.",
+                                "Connection has closed.",
                                 Toast.LENGTH_SHORT
                             ).show()
                         }
@@ -237,7 +220,7 @@ class RemoteVideoActivity : BaseActivity() {
                         withContext(Dispatchers.Main) {
                             Toast.makeText(
                                 this@RemoteVideoActivity,
-                                "Server has closed connect.",
+                                "Connection has closed.",
                                 Toast.LENGTH_SHORT
                             ).show()
                         }
@@ -246,8 +229,9 @@ class RemoteVideoActivity : BaseActivity() {
                 readJob.join()
                 writeJob.join()
             }
-        } else {
-            connectServer(serverAddr)
+        } finally {
+            client.close()
+            serverSocket?.close()
         }
     }
 

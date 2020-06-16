@@ -26,7 +26,7 @@ class ExampleUnitTest {
     val outputStream: PipedOutputStream = PipedOutputStream(inputStream)
 
     @Test
-    fun addition_isCorrect() = runBlocking {
+    fun readWriteTest() = runBlocking {
         val writeJob = launch(Dispatchers.IO) {
             val sizeByteArray = ByteArray(4)
             inputStream.readWithoutRemain(sizeByteArray)
@@ -57,8 +57,15 @@ class ExampleUnitTest {
         readJob.join()
     }
 
-    suspend fun testSuspend() = suspendCoroutine<Unit> { cont ->
-        Thread.sleep(500)
-        cont.resume(Unit)
+    @Test
+    fun asyncTest(): Unit = runBlocking {
+        val job = async {
+            launch {
+                delay(Long.MAX_VALUE)
+            }
+            true
+        }
+        job.await()
+        Unit
     }
 }
