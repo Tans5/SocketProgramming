@@ -68,4 +68,12 @@ class ExampleUnitTest {
         job.await()
         Unit
     }
+
+    @Test
+    fun shortTest(): Unit {
+        val s: Short = 0
+        val b = s.toByte()
+        val s1 = b.toShort()
+        println(s1)
+    }
 }

@@ -51,7 +51,8 @@ class RemoteVideoActivity : BaseActivity() {
     val audioRecordResult: Channel<ByteArray> = Channel(Channel.BUFFERED)
     val audioTrack = createDefaultAudioTrack()
 
-    val remoteData: Channel<ByteArray> = Channel(Channel.BUFFERED)
+    val remoteVideoData: Channel<ByteArray> = Channel(Channel.BUFFERED)
+    val remoteAudioData: Channel<ByteArray> = Channel(Channel.BUFFERED)
     val cameraDegrees: BroadcastChannel<Int> = BroadcastChannel(Channel.CONFLATED)
 
     val videoEncoder: MediaCodec by lazy { createDefaultEncodeMediaCodec() }
@@ -72,16 +73,9 @@ class RemoteVideoActivity : BaseActivity() {
                 val connectResult = connectToRemoteDevice()
                 if (connectResult != null) {
                     startCamera()
-                    // startAudioRecord()
-                    writeAndreadRemoteData(connectResult.first, connectResult.second)
+                    startAudioRecord()
+                    writeAndReadRemoteData(connectResult.first, connectResult.second)
                     decodeRemoteData()
-//                    withContext(Dispatchers.IO) {
-//                        audioTrack.play()
-//                        audioRecordResult.consumeEach { audioResult ->
-//                            println("AudioResult Size: ${audioResult.size}")
-//                            // audioTrack.write(audioResult, 0, AUDIO_BUFFER_SIZE)
-//                        }
-//                    }
                 }
             }
         }
@@ -105,8 +99,7 @@ class RemoteVideoActivity : BaseActivity() {
             val result = ByteArray(AUDIO_BUFFER_SIZE)
             while (audioRecord.state == AudioRecord.STATE_INITIALIZED) {
                 val job = launch(Dispatchers.IO) {
-                    val audioResult = audioRecord.read(result, 0, AUDIO_BUFFER_SIZE)
-                    println("AudioResult: $audioResult")
+                    audioRecord.readWithoutRemain(result)
                     audioRecordResult.send(result)
                 }
                 job.join()
@@ -173,7 +166,7 @@ class RemoteVideoActivity : BaseActivity() {
         return connectJob.await()
     }
 
-    fun writeAndreadRemoteData(client: Socket, serverSocket: ServerSocket? = null) = launch(Dispatchers.IO) {
+    fun writeAndReadRemoteData(client: Socket, serverSocket: ServerSocket? = null) = launch(Dispatchers.IO) {
         try {
             client.use {
                 // Read
@@ -181,20 +174,31 @@ class RemoteVideoActivity : BaseActivity() {
                     try {
                         val bis = BufferedInputStream(client.getInputStream(), BUFFER_SIZE)
                         val intByteArray = ByteArray(4)
+                        val typeByteArray = ByteArray(1)
+                        val audioResult = ByteArray(AUDIO_BUFFER_SIZE)
                         bis.readWithoutRemain(intByteArray)
                         val degrees = intByteArray.toInt()
                         withContext(Dispatchers.Main) { rotationRemoteView(degrees) }
-                        bis.readWithoutRemain(intByteArray)
-                        var size = intByteArray.toInt()
-                        var remoteResult = ByteArray(size)
-                        bis.readWithoutRemain(remoteResult, 0, size)
-                        while (size > 0) {
-                            remoteData.send(remoteResult)
-                            bis.readWithoutRemain(intByteArray)
-                            size = intByteArray.toInt()
-                            println("Remote Size: $size")
-                            remoteResult = ByteArray(size)
-                            bis.readWithoutRemain(remoteResult)
+
+                        while (true) {
+                            bis.readWithoutRemain(typeByteArray)
+                            val typeCode = typeByteArray[0].toShort()
+                            when (typeCode) {
+                                RemoteDataType.Video.code -> {
+                                    bis.readWithoutRemain(intByteArray)
+                                    val remoteVideoResult = ByteArray(intByteArray.toInt())
+                                    bis.readWithoutRemain(remoteVideoResult)
+                                    remoteVideoData.send(remoteVideoResult)
+                                }
+                                RemoteDataType.Audio.code -> {
+                                    bis.readWithoutRemain(audioResult)
+                                    remoteAudioData.send(audioResult)
+                                }
+                                else -> {
+                                    println("Wrong RemoteDataType")
+                                }
+                            }
+                            if (!RemoteDataType.values().map { it.code }.contains(typeCode)) { break }
                         }
                     } catch (e: Throwable) {
                         e.printStackTrace()
@@ -214,7 +218,20 @@ class RemoteVideoActivity : BaseActivity() {
                         val bos = client.getOutputStream()
                         val degrees = cameraDegrees.asFlow().first()
                         bos.write(degrees.toByteArray())
-                        cameraXAnalysisResult.consumeEach { data -> bos.write(data) }
+
+                        // Write Video
+                        launch(Dispatchers.IO) {
+                            runCatching {
+                                cameraXAnalysisResult.consumeEach { data -> bos.write(ByteArray(1) { RemoteDataType.Video.code.toByte() } + data) }
+                            }
+                        }
+
+                        // Write Audio
+                        launch(Dispatchers.IO) {
+                            runCatching {
+                                audioRecordResult.consumeEach { data -> bos.write(ByteArray(1) { RemoteDataType.Audio.code.toByte() } + data) }
+                            }
+                        }
                     } catch (e: Throwable) {
                         e.printStackTrace()
                         withContext(Dispatchers.Main) {
@@ -236,36 +253,46 @@ class RemoteVideoActivity : BaseActivity() {
     }
 
     fun decodeRemoteData() = launch(Dispatchers.IO) {
-        videoDecoder.start()
-        val bufferInfo = MediaCodec.BufferInfo()
-        remoteData.consumeEach { bytes ->
-            val inputIndex = try {
-                videoDecoder.dequeueInputBuffer(-1)
-            } catch (e: Throwable) {
-                e.printStackTrace()
-                return@consumeEach
-            }
-            if (inputIndex >= 0) {
-                val inputBuffer = videoDecoder.getInputBuffer(inputIndex)
-                if (inputBuffer != null) {
-                    inputBuffer.clear()
-                    inputBuffer.put(bytes)
-                    videoDecoder.queueInputBuffer(
-                        inputIndex,
-                        0,
-                        bytes.size,
-                        0,
-                        0
-                    )
+
+        // Decode video
+        launch(Dispatchers.IO) {
+            videoDecoder.start()
+            val bufferInfo = MediaCodec.BufferInfo()
+            remoteVideoData.consumeEach { bytes ->
+                val inputIndex = try {
+                    videoDecoder.dequeueInputBuffer(-1)
+                } catch (e: Throwable) {
+                    e.printStackTrace()
+                    return@consumeEach
                 }
-                val outputIndex = videoDecoder.dequeueOutputBuffer(bufferInfo, 0)
-                if (outputIndex >= 0) {
-                    videoDecoder.releaseOutputBuffer(outputIndex, true)
-                    println("Has decode remote data: ${bytes.size}")
-                } else {
-                    println("Decode remote data fail: ${bytes.size}")
+                if (inputIndex >= 0) {
+                    val inputBuffer = videoDecoder.getInputBuffer(inputIndex)
+                    if (inputBuffer != null) {
+                        inputBuffer.clear()
+                        inputBuffer.put(bytes)
+                        videoDecoder.queueInputBuffer(
+                            inputIndex,
+                            0,
+                            bytes.size,
+                            0,
+                            0
+                        )
+                    }
+                    val outputIndex = videoDecoder.dequeueOutputBuffer(bufferInfo, 0)
+                    if (outputIndex >= 0) {
+                        videoDecoder.releaseOutputBuffer(outputIndex, true)
+                        println("Has decode remote data: ${bytes.size}")
+                    } else {
+                        println("Decode remote data fail: ${bytes.size}")
+                    }
                 }
             }
+        }
+
+        // Play Remote Audio
+        launch(Dispatchers.IO) {
+            audioTrack.play()
+            remoteAudioData.consumeEach { audioTrack.write(it, 0, AUDIO_BUFFER_SIZE) }
         }
     }
 
@@ -384,6 +411,11 @@ class RemoteVideoActivity : BaseActivity() {
     }
 
     override fun onDestroy() {
+        cameraXAnalysisResult.cancel()
+        audioRecordResult.cancel()
+        remoteVideoData.cancel()
+        remoteAudioData.cancel()
+        cameraDegrees.cancel()
         super.onDestroy()
         videoEncoder.stop()
         videoEncoder.release()
@@ -484,4 +516,8 @@ class EncoderAnalyzer(val encoder: MediaCodec, val callback: (result: ByteArray,
         image.close()
     }
 
+}
+
+enum class RemoteDataType(val code: Short) {
+    Video(0), Audio(1)
 }

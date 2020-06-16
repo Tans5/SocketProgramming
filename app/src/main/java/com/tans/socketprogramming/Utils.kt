@@ -3,6 +3,7 @@ package com.tans.socketprogramming
 import android.content.Context
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
+import android.media.AudioRecord
 import android.view.WindowManager
 import androidx.appcompat.app.AlertDialog
 import io.reactivex.Observable
@@ -192,6 +193,21 @@ fun InputStream.readWithoutRemain(bytes: ByteArray, offset: Int, len: Int) {
         val needRead = len - readCount
         readWithoutRemain(bytes, offset + readCount, needRead)
     } else {
+        return
+    }
+}
+
+fun AudioRecord.readWithoutRemain(bytes: ByteArray) = readWithoutRemain(bytes, 0, bytes.size)
+
+fun AudioRecord.readWithoutRemain(bytes: ByteArray, offset: Int, len: Int) {
+    val readCount = read(bytes, offset, len)
+    if (readCount in 0 until len) {
+        val needRead = len - readCount
+        readWithoutRemain(bytes, offset + readCount, needRead)
+    } else {
+        if (readCount < 0) {
+            println("AudioRecord Read Error: $readCount")
+        }
         return
     }
 }
