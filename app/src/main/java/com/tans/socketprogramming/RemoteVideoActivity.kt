@@ -100,6 +100,7 @@ class RemoteVideoActivity : BaseActivity() {
             while (audioRecord.state == AudioRecord.STATE_INITIALIZED) {
                 val job = launch(Dispatchers.IO) {
                     audioRecord.readWithoutRemain(result)
+                    println("Local Audio: ${result.size}")
                     audioRecordResult.send(result)
                 }
                 job.join()
@@ -292,7 +293,10 @@ class RemoteVideoActivity : BaseActivity() {
         // Play Remote Audio
         launch(Dispatchers.IO) {
             audioTrack.play()
-            remoteAudioData.consumeEach { audioTrack.write(it, 0, AUDIO_BUFFER_SIZE) }
+            remoteAudioData.consumeEach {
+                println("Receive Remote Audio: ${it.size}")
+                audioTrack.write(it, 0, AUDIO_BUFFER_SIZE)
+            }
         }
     }
 

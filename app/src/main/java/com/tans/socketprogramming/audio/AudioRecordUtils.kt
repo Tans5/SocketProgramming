@@ -5,9 +5,9 @@ import android.media.*
 const val AUDIO_SOURCE = MediaRecorder.AudioSource.MIC
 // 44100 Hz
 const val AUDIO_SAMPLE_RATE = 44100
-const val AUDIO_CHANNEL_IN = AudioFormat.CHANNEL_IN_STEREO
-const val AUDIO_CHANNEL_OUT = AudioFormat.CHANNEL_OUT_STEREO
-const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_8BIT
+const val AUDIO_CHANNEL_IN = AudioFormat.CHANNEL_IN_MONO
+const val AUDIO_CHANNEL_OUT = AudioFormat.CHANNEL_OUT_MONO
+const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
 val AUDIO_BUFFER_SIZE = AudioRecord.getMinBufferSize(AUDIO_SAMPLE_RATE, AUDIO_CHANNEL_IN, AUDIO_FORMAT)
 
 fun createDefaultAudioRecord(): AudioRecord = AudioRecord(AUDIO_SOURCE, AUDIO_SAMPLE_RATE, AUDIO_CHANNEL_IN, AUDIO_FORMAT, AUDIO_BUFFER_SIZE)
