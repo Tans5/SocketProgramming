@@ -173,7 +173,7 @@ class RemoteVideoActivity : BaseActivity() {
                 // Read
                 val readJob = launch(Dispatchers.IO) {
                     try {
-                        val bis = BufferedInputStream(client.getInputStream(), BUFFER_SIZE)
+                        val bis = BufferedInputStream(client.getInputStream(), VIDEO_BUFFER_SIZE)
                         val intByteArray = ByteArray(4)
                         val typeByteArray = ByteArray(1)
                         bis.readWithoutRemain(intByteArray)

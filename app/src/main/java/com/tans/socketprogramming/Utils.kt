@@ -51,6 +51,36 @@ suspend fun Socket.connectSuspend(workDispatcher: CoroutineDispatcher = Dispatch
     false
 }
 
+suspend fun DatagramSocket.bindSuspend(endPoint: InetSocketAddress, workDispatcher: CoroutineDispatcher = Dispatchers.IO): Boolean = try {
+    blockToSuspend(workDispatcher) {
+        bind(endPoint)
+    }
+    true
+} catch (e: Throwable) {
+    e.printStackTrace()
+    false
+}
+
+suspend fun DatagramSocket.receiveSuspend(packet: DatagramPacket, workDispatcher: CoroutineDispatcher = Dispatchers.IO): Boolean = try {
+    blockToSuspend(workDispatcher) {
+        receive(packet)
+    }
+    true
+} catch (e: Throwable) {
+    e.printStackTrace()
+    false
+}
+
+suspend fun DatagramSocket.sendSuspend(packet: DatagramPacket, workDispatcher: CoroutineDispatcher = Dispatchers.IO): Boolean = try {
+    blockToSuspend(workDispatcher) {
+        send(packet)
+    }
+    true
+} catch (e: Throwable) {
+    e.printStackTrace()
+    false
+}
+
 suspend fun <T> blockToSuspend(workDispatcher: CoroutineDispatcher = Dispatchers.IO,
                                block: () -> T): T = suspendCancellableCoroutine { cont ->
     val interceptor = cont.context[ContinuationInterceptor]

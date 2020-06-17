@@ -27,10 +27,6 @@ class ClientActivity : BaseActivity() {
 
     val serversChannel: BroadcastChannel<List<ServerInfoModel>> = BroadcastChannel(Channel.CONFLATED)
 
-    val ip: IntArray by lazy {
-        (getSystemService<WifiManager>()?.connectionInfo?.ipAddress ?: 0).toIpAddr()
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_client)
@@ -76,28 +72,72 @@ class ClientActivity : BaseActivity() {
 
     fun receiveBroadcast(): Job {
         return launch(Dispatchers.IO) {
-            ServerSocket().use { serverSocket ->
-                val result = serverSocket.bindSuspend(InetSocketAddress(null as InetAddress?, BROADCAST_PORT), Int.MAX_VALUE)
-                if (result) {
+//            ServerSocket().use { serverSocket ->
+//                val result = serverSocket.bindSuspend(InetSocketAddress(null as InetAddress?, BROADCAST_PORT), Int.MAX_VALUE)
+//                if (result) {
+//                    while (true) {
+//                        val client = serverSocket.acceptSuspend()
+//                        client?.use {
+//                            val reader = BufferedReader(InputStreamReader(client.getInputStream()))
+//                            val serverName = reader.readLine()
+//                            val serverInfoModel = ServerInfoModel(
+//                                serverName = serverName ?: "",
+//                                serverAddress = client.inetAddress,
+//                                updateTime = System.currentTimeMillis()
+//                            )
+//                            updateServerChannel(serverInfoModel)
+//                        }
+//                        delay(200)
+//                    }
+//                } else {
+//                    withContext(Dispatchers.Main) {
+//                        Toast.makeText(this@ClientActivity, "Bind Broadcast server error", Toast.LENGTH_SHORT).show()
+//                    }
+//                }
+//            }
+            val socket = DatagramSocket(null)
+            val hasBind = socket.bindSuspend(InetSocketAddress(BROADCAST_RECEIVE_PORT))
+            if (hasBind) {
+                socket.use {
                     while (true) {
-                        val client = serverSocket.acceptSuspend()
-                        client?.use {
-                            val reader = BufferedReader(InputStreamReader(client.getInputStream()))
-                            val serverName = reader.readLine()
-                            val serverInfoModel = ServerInfoModel(
-                                serverName = serverName ?: "",
-                                serverAddress = client.inetAddress,
-                                updateTime = System.currentTimeMillis()
+                        val job = async(Dispatchers.IO) {
+                            val result = ByteArray(BROADCAST_BUFFER_SIZE)
+                            val packet = DatagramPacket(
+                                result,
+                                0,
+                                BROADCAST_BUFFER_SIZE,
+                                InetSocketAddress(BROADCAST_SEND_PORT)
                             )
-                            updateServerChannel(serverInfoModel)
+                            if (socket.receiveSuspend(packet)) {
+                                val len = result.slice(0 until 4).toByteArray().toInt()
+                                val serverName =
+                                    result.slice(4 until len + 4).toByteArray()
+                                        .toString(Charsets.UTF_8)
+                                val serverAddress = packet.address
+                                println("Find Server: $serverName, addr: ${serverAddress.hostAddress}")
+                                updateServerChannel(
+                                    ServerInfoModel(
+                                        serverName = serverName,
+                                        serverAddress = serverAddress,
+                                        updateTime = System.currentTimeMillis()
+                                    )
+                                )
+                                true
+                            } else {
+                                false
+                            }
                         }
-                        delay(200)
-                    }
-                } else {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(this@ClientActivity, "Bind Broadcast server error", Toast.LENGTH_SHORT).show()
+                        if (job.await()) {
+                            continue
+                        } else {
+                            break
+                        }
                     }
                 }
+            } else {
+                socket.disconnect()
+                socket.close()
+                receiveBroadcast()
             }
         }
     }
@@ -108,7 +148,7 @@ class ClientActivity : BaseActivity() {
         val newServers = if (needUpdateServer == null) {
             lastServers + serverInfoModel
         } else {
-            lastServers - needUpdateServer + serverInfoModel
+            lastServers.map { if (it.serverAddress == serverInfoModel.serverAddress) serverInfoModel else it }
         }
         serversChannel.send(newServers)
     }
@@ -140,11 +180,11 @@ class ClientActivity : BaseActivity() {
     }
 
     companion object {
-        // 10 seconds.
-        const val SERVER_KEEP_ALIVE_TIME: Long = 10000
+        // 4 seconds.
+        const val SERVER_KEEP_ALIVE_TIME: Long = 4000
 
-        // 5 seconds
-        const val CHECK_SERVERS_DURATION: Long = 5000
+        // 1 seconds
+        const val CHECK_SERVERS_DURATION: Long = 1000
 
         data class ServerInfoModel(val serverName: String,
                                    val serverAddress: InetAddress,

@@ -18,19 +18,11 @@ import java.net.*
  */
 class ServerActivity : BaseActivity() {
 
-    val ip: IntArray by lazy {
-        (getSystemService<WifiManager>()?.connectionInfo?.ipAddress ?: 0).toIpAddr()
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_server)
         waitClientConnect()
         sendBroadCast()
-
-        val ipString = String.format("%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3])
-
-        println("Server Ip: $ipString")
     }
 
     fun waitClientConnect(): Job {
@@ -65,34 +57,62 @@ class ServerActivity : BaseActivity() {
 
     fun sendBroadCast(): Job {
         return launch (Dispatchers.IO) {
-            while (true) {
-                launch {
-                    repeat(254) { i ->
-                        val clientNum = ip[3]
-                        if (clientNum != i + 1) {
-                            launch {
-                                val broadcastServerIp = IntArray(4) { index ->
-                                    if (index == 3) {
-                                        i + 1
-                                    } else {
-                                        ip[index]
-                                    }
-                                }
-                                val client = Socket()
-                                val endPoint = InetSocketAddress(InetAddress.getByAddress(broadcastServerIp.toInetByteArray()), BROADCAST_PORT)
-                                val result = client.connectSuspend(endPoint = endPoint)
-                                if (result) {
-                                    client.use {
-                                        val writer = BufferedWriter(OutputStreamWriter(it.getOutputStream()))
-                                        writer.write("${Build.BRAND} ${Build.MODEL}\n")
-                                        writer.flush()
-                                    }
-                                }
-                            }
+//            while (true) {
+//                launch {
+//                    repeat(254) { i ->
+//                        val clientNum = ip[3]
+//                        if (clientNum != i + 1) {
+//                            launch {
+//                                val broadcastServerIp = IntArray(4) { index ->
+//                                    if (index == 3) {
+//                                        i + 1
+//                                    } else {
+//                                        ip[index]
+//                                    }
+//                                }
+//                                val client = Socket()
+//                                val endPoint = InetSocketAddress(InetAddress.getByAddress(broadcastServerIp.toInetByteArray()), BROADCAST_PORT)
+//                                val result = client.connectSuspend(endPoint = endPoint)
+//                                if (result) {
+//                                    client.use {
+//                                        val writer = BufferedWriter(OutputStreamWriter(it.getOutputStream()))
+//                                        writer.write("${Build.BRAND} ${Build.MODEL}\n")
+//                                        writer.flush()
+//                                    }
+//                                }
+//                            }
+//                        }
+//                    }
+//                }.join()
+//            }
+            val socket = DatagramSocket(null)
+            val hasBind = socket.bindSuspend(InetSocketAddress(BROADCAST_SEND_PORT))
+            if (hasBind) {
+                socket.use {
+                    val data = "${Build.BRAND} ${Build.MODEL}".toByteArray(Charsets.UTF_8)
+                    val dataLen = data.size.toByteArray()
+                    val lenAndData = dataLen + data
+                    while (true) {
+                        val job = launch(Dispatchers.IO) {
+                            val packet = DatagramPacket(
+                                lenAndData,
+                                0,
+                                lenAndData.size,
+                                InetSocketAddress(
+                                    InetAddress.getByAddress((-1).toIpAddr().toInetByteArray()),
+                                    BROADCAST_RECEIVE_PORT
+                                )
+                            )
+                            socket.sendSuspend(packet)
                         }
+                        job.join()
                     }
-                }.join()
+                }
+            } else {
+                socket.close()
+                sendBroadCast()
             }
+
         }
     }
 }
