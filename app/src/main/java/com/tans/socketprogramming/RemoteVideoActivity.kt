@@ -96,9 +96,9 @@ class RemoteVideoActivity : BaseActivity() {
     fun startAudioRecord() {
         audioRecord.startRecording()
         launch {
-            val result = ByteArray(AUDIO_BUFFER_SIZE)
             while (audioRecord.state == AudioRecord.STATE_INITIALIZED) {
                 val job = launch(Dispatchers.IO) {
+                    val result = ByteArray(AUDIO_BUFFER_SIZE)
                     audioRecord.readWithoutRemain(result)
                     println("Local Audio: ${result.size}")
                     audioRecordResult.send(result)
@@ -176,7 +176,6 @@ class RemoteVideoActivity : BaseActivity() {
                         val bis = BufferedInputStream(client.getInputStream(), BUFFER_SIZE)
                         val intByteArray = ByteArray(4)
                         val typeByteArray = ByteArray(1)
-                        val audioResult = ByteArray(AUDIO_BUFFER_SIZE)
                         bis.readWithoutRemain(intByteArray)
                         val degrees = intByteArray.toInt()
                         withContext(Dispatchers.Main) { rotationRemoteView(degrees) }
@@ -192,6 +191,7 @@ class RemoteVideoActivity : BaseActivity() {
                                     remoteVideoData.send(remoteVideoResult)
                                 }
                                 RemoteDataType.Audio.code -> {
+                                    val audioResult = ByteArray(AUDIO_BUFFER_SIZE)
                                     bis.readWithoutRemain(audioResult)
                                     remoteAudioData.send(audioResult)
                                 }
