@@ -395,19 +395,32 @@ class RemoteVideoActivity : BaseActivity() {
                 }
             }
             while (true) {
-                runCatching {
-                    var outputIndex = videoEncoder.dequeueOutputBuffer(bufferInfo, -1)
-                    while (outputIndex >= 0) {
-                        val outputBuffer = videoEncoder.getOutputBuffer(outputIndex)
-                        val result = outputBuffer?.toByteArray()
-                        videoEncoder.releaseOutputBuffer(outputIndex, false)
-                        outputIndex = videoEncoder.dequeueOutputBuffer(bufferInfo, 0)
-                        if (result != null) {
-                            val size = result.size
-                            println("Encode Result Size: ${result.size}")
-                            cameraXAnalysisResult.send((size.toByteArray() + result))
+                val job = async(Dispatchers.IO) {
+                    val result = runCatching {
+                        var outputIndex = videoEncoder.dequeueOutputBuffer(bufferInfo, -1)
+                        while (outputIndex >= 0) {
+                            val outputBuffer = videoEncoder.getOutputBuffer(outputIndex)
+                            val result = outputBuffer?.toByteArray()
+                            videoEncoder.releaseOutputBuffer(outputIndex, false)
+                            outputIndex = videoEncoder.dequeueOutputBuffer(bufferInfo, 0)
+                            if (result != null) {
+                                val size = result.size
+                                println("Encode Result Size: ${result.size}")
+                                cameraXAnalysisResult.send((size.toByteArray() + result))
+                            }
                         }
                     }
+                    if (result.isFailure) {
+                        result.exceptionOrNull()?.printStackTrace()
+                        false
+                    } else {
+                        true
+                    }
+                }
+                if (job.await()) {
+                    continue
+                } else {
+                    break
                 }
             }
         }
