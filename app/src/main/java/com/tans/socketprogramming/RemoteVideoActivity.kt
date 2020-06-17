@@ -172,7 +172,7 @@ class RemoteVideoActivity : BaseActivity() {
             client.use {
                 // Read
                 val readJob = launch(Dispatchers.IO) {
-                    try {
+                    val result = runCatching {
                         val bis = BufferedInputStream(client.getInputStream(), VIDEO_BUFFER_SIZE)
                         val intByteArray = ByteArray(4)
                         val typeByteArray = ByteArray(1)
@@ -181,41 +181,48 @@ class RemoteVideoActivity : BaseActivity() {
                         withContext(Dispatchers.Main) { rotationRemoteView(degrees) }
 
                         while (true) {
-                            bis.readWithoutRemain(typeByteArray)
-                            val typeCode = typeByteArray[0].toShort()
-                            when (typeCode) {
-                                RemoteDataType.Video.code -> {
-                                    bis.readWithoutRemain(intByteArray)
-                                    val remoteVideoResult = ByteArray(intByteArray.toInt())
-                                    bis.readWithoutRemain(remoteVideoResult)
-                                    remoteVideoData.send(remoteVideoResult)
+                            val job = async {
+                                val result = runCatching {
+                                    bis.readWithoutRemain(typeByteArray)
+                                    val typeCode = typeByteArray[0].toShort()
+                                    when (typeCode) {
+                                        RemoteDataType.Video.code -> {
+                                            bis.readWithoutRemain(intByteArray)
+                                            val remoteVideoResult = ByteArray(intByteArray.toInt())
+                                            bis.readWithoutRemain(remoteVideoResult)
+                                            remoteVideoData.send(remoteVideoResult)
+                                            true
+                                        }
+                                        RemoteDataType.Audio.code -> {
+                                            val audioResult = ByteArray(AUDIO_BUFFER_SIZE)
+                                            bis.readWithoutRemain(audioResult)
+                                            remoteAudioData.send(audioResult)
+                                            true
+                                        }
+                                        else -> {
+                                            println("Wrong RemoteDataType")
+                                            false
+                                        }
+                                    }
                                 }
-                                RemoteDataType.Audio.code -> {
-                                    val audioResult = ByteArray(AUDIO_BUFFER_SIZE)
-                                    bis.readWithoutRemain(audioResult)
-                                    remoteAudioData.send(audioResult)
-                                }
-                                else -> {
-                                    println("Wrong RemoteDataType")
+                                if (result.isFailure) {
+                                    result.exceptionOrNull()?.printStackTrace()
+                                    false
+                                } else {
+                                    result.getOrDefault(false)
                                 }
                             }
-                            if (!RemoteDataType.values().map { it.code }.contains(typeCode)) { break }
-                        }
-                    } catch (e: Throwable) {
-                        e.printStackTrace()
-                        withContext(Dispatchers.Main) {
-                            Toast.makeText(
-                                this@RemoteVideoActivity,
-                                "Connection has closed.",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            if (!job.await()) {
+                                break
+                            }
                         }
                     }
+                    if (result.isFailure) result.exceptionOrNull()?.printStackTrace()
                 }
 
                 // Write
                 val writeJob = launch(Dispatchers.IO) {
-                    try {
+                    val result = runCatching {
                         val bos = client.getOutputStream()
                         val degrees = cameraDegrees.asFlow().first()
                         bos.write(degrees.toByteArray())
@@ -233,21 +240,20 @@ class RemoteVideoActivity : BaseActivity() {
                                 audioRecordResult.consumeEach { data -> bos.write(ByteArray(1) { RemoteDataType.Audio.code.toByte() } + data) }
                             }
                         }
-                    } catch (e: Throwable) {
-                        e.printStackTrace()
-                        withContext(Dispatchers.Main) {
-                            Toast.makeText(
-                                this@RemoteVideoActivity,
-                                "Connection has closed.",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
                     }
+                    if (result.isFailure) result.exceptionOrNull()?.printStackTrace()
                 }
                 readJob.join()
                 writeJob.join()
             }
         } finally {
+            withContext(Dispatchers.Main) {
+                Toast.makeText(
+                    this@RemoteVideoActivity,
+                    "Connection has closed.",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
             client.close()
             serverSocket?.close()
         }
@@ -412,7 +418,7 @@ class RemoteVideoActivity : BaseActivity() {
                     }
                     if (result.isFailure) {
                         result.exceptionOrNull()?.printStackTrace()
-                        false
+                        isActive
                     } else {
                         true
                     }

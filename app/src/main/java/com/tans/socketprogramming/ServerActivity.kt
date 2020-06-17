@@ -93,7 +93,7 @@ class ServerActivity : BaseActivity() {
                     val dataLen = data.size.toByteArray()
                     val lenAndData = dataLen + data
                     while (true) {
-                        val job = launch(Dispatchers.IO) {
+                        val job = async(Dispatchers.IO) {
                             val packet = DatagramPacket(
                                 lenAndData,
                                 0,
@@ -105,7 +105,11 @@ class ServerActivity : BaseActivity() {
                             )
                             socket.sendSuspend(packet)
                         }
-                        job.join()
+                        if (!job.await() && !isActive) {
+                            break
+                        } else {
+                            continue
+                        }
                     }
                 }
             } else {
