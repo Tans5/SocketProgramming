@@ -7,6 +7,7 @@ import android.content.Intent
 import android.graphics.Matrix
 import android.graphics.SurfaceTexture
 import android.media.AudioRecord
+import android.media.AudioTrack
 import android.media.MediaCodec
 import android.os.Bundle
 import android.util.Size
@@ -49,7 +50,7 @@ class RemoteVideoActivity : BaseActivity() {
     val cameraXAnalysisResult: Channel<ByteArray> = Channel(Channel.BUFFERED)
 
     val audioRecordResult: Channel<ByteArray> = Channel(Channel.BUFFERED)
-    val audioTrack = createDefaultAudioTrack()
+    val audioTrack: AudioTrack by lazy { createDefaultAudioTrack() }
 
     val remoteVideoData: Channel<ByteArray> = Channel(Channel.BUFFERED)
     val remoteAudioData: Channel<ByteArray> = Channel(Channel.BUFFERED)
@@ -58,7 +59,7 @@ class RemoteVideoActivity : BaseActivity() {
     val videoEncoder: MediaCodec by lazy { createDefaultEncodeMediaCodec() }
     val videoDecoder: MediaCodec by lazy { createDefaultDecodeMediaCodec(Surface(remote_preview_view.surfaceTexture)) }
 
-    val audioRecord = createDefaultAudioRecord()
+    val audioRecord: AudioRecord by lazy { createDefaultAudioRecord() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
