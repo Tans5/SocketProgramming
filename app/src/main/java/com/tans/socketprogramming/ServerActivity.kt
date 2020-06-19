@@ -99,7 +99,7 @@ class ServerActivity : BaseActivity() {
                                 0,
                                 lenAndData.size,
                                 InetSocketAddress(
-                                    InetAddress.getByAddress((-1).toIpAddr().toInetByteArray()),
+                                    broadcastIpAddress(),
                                     BROADCAST_RECEIVE_PORT
                                 )
                             )
@@ -118,5 +118,14 @@ class ServerActivity : BaseActivity() {
             }
 
         }
+    }
+
+    fun broadcastIpAddress(): InetAddress {
+        val wifiManager: WifiManager? = getSystemService()
+        return wifiManager?.dhcpInfo?.let {
+            val ip = InetAddress.getByAddress(it.ipAddress.toIpAddr().toInetByteArray())
+            val networkInterface = NetworkInterface.getByInetAddress(ip)
+            networkInterface.interfaceAddresses.map { interfaceAddress ->  interfaceAddress.broadcast }.findLast { broadcast -> broadcast != null }
+        } ?: InetAddress.getByAddress((-1).toIpAddr().toInetByteArray())
     }
 }
