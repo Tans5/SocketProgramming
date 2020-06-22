@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.media.AudioRecord
+import android.media.AudioTrack
 import android.view.WindowManager
 import androidx.appcompat.app.AlertDialog
 import io.reactivex.Observable
@@ -14,7 +15,7 @@ import java.net.*
 import kotlin.coroutines.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
-import java.io.InputStream
+import java.io.*
 import java.lang.Runnable
 import java.nio.ByteBuffer
 
@@ -256,10 +257,16 @@ fun Int.toByteArray(): ByteArray = ByteArray(4) { i ->
 
 fun ByteArray.toInt(): Int = ByteBuffer.wrap(this).int
 
+suspend fun InputStream.readWithoutRemainSuspend(
+    bytes: ByteArray,
+    offset: Int = 0,
+    len: Int = bytes.size,
+    workDispatcher: CoroutineDispatcher = Dispatchers.IO
+) = blockToSuspend(workDispatcher) {
+    readWithoutRemain(bytes, offset, len)
+}
 
-fun InputStream.readWithoutRemain(bytes: ByteArray) = readWithoutRemain(bytes, 0, bytes.size)
-
-fun InputStream.readWithoutRemain(bytes: ByteArray, offset: Int, len: Int) {
+fun InputStream.readWithoutRemain(bytes: ByteArray, offset: Int = 0, len: Int = bytes.size) {
     val readCount = read(bytes, offset, len)
     if (readCount < len) {
         val needRead = len - readCount
@@ -269,17 +276,17 @@ fun InputStream.readWithoutRemain(bytes: ByteArray, offset: Int, len: Int) {
     }
 }
 
-fun AudioRecord.readWithoutRemain(bytes: ByteArray) = readWithoutRemain(bytes, 0, bytes.size)
-
-fun AudioRecord.readWithoutRemain(bytes: ByteArray, offset: Int, len: Int) {
-    val readCount = read(bytes, offset, len)
-    if (readCount in 0 until len) {
-        val needRead = len - readCount
-        readWithoutRemain(bytes, offset + readCount, needRead)
-    } else {
-        if (readCount < 0) {
-            println("AudioRecord Read Error: $readCount")
-        }
-        return
-    }
+suspend fun OutputStream.writeSuspend(
+    bytes: ByteArray,
+    offset: Int = 0,
+    len: Int = bytes.size,
+    workDispatcher: CoroutineDispatcher = Dispatchers.IO
+) = blockToSuspend(workDispatcher) {
+    write(bytes, offset, len)
 }
+
+suspend fun BufferedReader.readLineSuspend(workDispatcher: CoroutineDispatcher = Dispatchers.IO) =
+    blockToSuspend(workDispatcher) { readLine() ?: "" }
+
+suspend fun BufferedWriter.writeSuspend(s: String, workDispatcher: CoroutineDispatcher = Dispatchers.IO) =
+    blockToSuspend(workDispatcher) { write(s); flush() }

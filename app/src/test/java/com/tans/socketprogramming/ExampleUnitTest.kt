@@ -29,17 +29,17 @@ class ExampleUnitTest {
     fun readWriteTest() = runBlocking {
         val writeJob = launch(Dispatchers.IO) {
             val sizeByteArray = ByteArray(4)
-            inputStream.readWithoutRemain(sizeByteArray)
+            inputStream.readWithoutRemainSuspend(sizeByteArray)
             var count = sizeByteArray.toInt()
             println("Count: $count")
             var dataArray = ByteArray(count)
-            inputStream.readWithoutRemain(dataArray)
+            inputStream.readWithoutRemainSuspend(dataArray)
             while (true) {
-                inputStream.readWithoutRemain(sizeByteArray)
+                inputStream.readWithoutRemainSuspend(sizeByteArray)
                 count = sizeByteArray.toInt()
                 println("Count: $count")
                 dataArray = ByteArray(count)
-                inputStream.readWithoutRemain(dataArray)
+                inputStream.readWithoutRemainSuspend(dataArray)
                 // println("Result: ${dataArray.toString(Charsets.UTF_8)}")
             }
         }
@@ -75,5 +75,21 @@ class ExampleUnitTest {
         val b = s.toByte()
         val s1 = b.toShort()
         println(s1)
+    }
+
+    @Test
+    fun coroutineTest() = runBlocking {
+        val job = launch {
+            try {
+                blockToSuspend {
+                    Thread.sleep(Long.MAX_VALUE)
+                }
+                println("Sleep finish.")
+            } finally {
+                println("Do finally!!!")
+            }
+        }
+        delay(2000)
+        job.cancel()
     }
 }

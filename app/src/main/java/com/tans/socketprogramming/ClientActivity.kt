@@ -168,9 +168,8 @@ class ClientActivity : BaseActivity() {
                     val readWriteResult = runCatching {
                         val writer = BufferedWriter(OutputStreamWriter(socket.getOutputStream()))
                         val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
-                        writer.write("${Build.BRAND} ${Build.MODEL}\n")
-                        writer.flush()
-                        val accept = reader.readLine()
+                        writer.writeSuspend("${Build.BRAND} ${Build.MODEL}\n")
+                        val accept = reader.readLineSuspend()
                         accept == true.toString()
                     }
                     if (readWriteResult.isFailure()) {

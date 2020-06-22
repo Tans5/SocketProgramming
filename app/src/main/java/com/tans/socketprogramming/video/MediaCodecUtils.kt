@@ -4,6 +4,9 @@ import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.view.Surface
+import com.tans.socketprogramming.blockToSuspend
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 
 const val VIDEO_WITH = 640
 const val VIDEO_HEIGHT = 480
@@ -69,4 +72,56 @@ fun MediaCodec.callback(inputAvailable: (mc: MediaCodec, inputBufferId: Int) -> 
         override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {}
 
     })
+}
+
+suspend fun MediaCodec.dequeueOutputBufferSuspend(
+    bufferInfo: MediaCodec.BufferInfo,
+    timeout: Long,
+    workDispatcher: CoroutineDispatcher = Dispatchers.IO
+) = blockToSuspend(workDispatcher) {
+    dequeueOutputBuffer(bufferInfo, timeout)
+}
+
+suspend fun MediaCodec.dequeueInputBufferSuspend(
+    timeout: Long,
+    workDispatcher: CoroutineDispatcher = Dispatchers.IO
+) = blockToSuspend(workDispatcher) {
+    dequeueInputBuffer(timeout)
+}
+
+suspend fun MediaCodec.queueInputBufferSuspend(
+    inputIndex: Int,
+    offset: Int = 0,
+    size: Int,
+    timeUs: Long = 0,
+    flags: Int = 0,
+    workDispatcher: CoroutineDispatcher = Dispatchers.IO
+) = blockToSuspend(workDispatcher) {
+    queueInputBuffer(inputIndex,
+        offset,
+        size,
+        timeUs,
+        flags)
+}
+
+suspend fun MediaCodec.getOutputBufferSuspend(
+    outputIndex: Int,
+    workDispatcher: CoroutineDispatcher = Dispatchers.IO
+) = blockToSuspend(workDispatcher) {
+    getOutputBuffer(outputIndex)
+}
+
+suspend fun MediaCodec.getInputBufferSuspend(
+    outputIndex: Int,
+    workDispatcher: CoroutineDispatcher = Dispatchers.IO
+) = blockToSuspend(workDispatcher) {
+    getInputBuffer(outputIndex)
+}
+
+suspend fun MediaCodec.releaseOutputBufferSuspend(
+    outputIndex: Int,
+    render: Boolean,
+    workDispatcher: CoroutineDispatcher = Dispatchers.IO
+) = blockToSuspend(workDispatcher) {
+    releaseOutputBuffer(outputIndex, render)
 }

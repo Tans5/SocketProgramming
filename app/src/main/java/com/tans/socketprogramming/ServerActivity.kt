@@ -37,7 +37,7 @@ class ServerActivity : BaseActivity() {
                     acceptResult.resultOrNull()!!.use {
                         val reader = BufferedReader(InputStreamReader(it.getInputStream()))
                         val readWriteResult = runCatching {
-                            val clientName = reader.readLine()
+                            val clientName = reader.readLineSuspend()
                             val clientAddress = it.inetAddress
                             val result = withContext(Dispatchers.Main) {
                                 alertDialog(
@@ -46,8 +46,7 @@ class ServerActivity : BaseActivity() {
                                 )
                             }
                             val writer = BufferedWriter(OutputStreamWriter(it.getOutputStream()))
-                            writer.write(result.toString() + '\n')
-                            writer.flush()
+                            writer.writeSuspend(result.toString() + '\n')
                             if (!result) {
                                 waitClientConnect()
                             } else {

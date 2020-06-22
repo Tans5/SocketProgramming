@@ -1,6 +1,9 @@
 package com.tans.socketprogramming.audio
 
 import android.media.*
+import com.tans.socketprogramming.blockToSuspend
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 
 const val AUDIO_SOURCE = MediaRecorder.AudioSource.MIC
 // 44100 Hz
@@ -24,3 +27,30 @@ fun createDefaultAudioFormat(): AudioFormat = AudioFormat.Builder()
 
 fun createDefaultAudioTrack(): AudioTrack = AudioTrack(createDefaultAudioAttributes(), createDefaultAudioFormat(),
     AUDIO_BUFFER_SIZE, AudioTrack.MODE_STREAM, AudioManager.AUDIO_SESSION_ID_GENERATE)
+
+fun AudioRecord.readWithoutRemain(bytes: ByteArray, offset: Int = 0, len: Int = bytes.size) {
+    val readCount = read(bytes, offset, len)
+    if (readCount in 0 until len) {
+        val needRead = len - readCount
+        readWithoutRemain(bytes, offset + readCount, needRead)
+    } else {
+        if (readCount < 0) {
+            println("AudioRecord Read Error: $readCount")
+        }
+        return
+    }
+}
+
+suspend fun AudioTrack.writeSuspend(
+    bytes: ByteArray,
+    offset: Int = 0,
+    size: Int = bytes.size,
+    workDispatcher: CoroutineDispatcher = Dispatchers.IO
+) = blockToSuspend(workDispatcher) { write(bytes, offset, size) }
+
+suspend fun AudioRecord.readWithoutRemainSuspend(
+    bytes: ByteArray,
+    offset: Int = 0,
+    len: Int = bytes.size,
+    workDispatcher: CoroutineDispatcher = Dispatchers.IO
+) = blockToSuspend(workDispatcher) { readWithoutRemain(bytes, offset, len) }
