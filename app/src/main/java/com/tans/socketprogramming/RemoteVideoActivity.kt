@@ -229,48 +229,53 @@ class RemoteVideoActivity : BaseActivity() {
                 }
 
                 // Write
-                val writeJob = launch(Dispatchers.IO) {
-                    try {
-                        val bos = client.getOutputStream()
+                val writeJob = launch(Dispatchers.IO) writeJob@{
+                    val bos = client.getOutputStream()
+
+                    val degreesResult = runCatching {
                         val degrees = cameraDegrees.asFlow().first()
                         bos.writeSuspend(degrees.toByteArray())
-                        // Write Video
-                        val cameraWriteJob = async(Dispatchers.IO) {
-                            runCatching {
-                                cameraXAnalysisResult.consumeEach { data -> bos.writeSuspend(ByteArray(1) { RemoteDataType.Video.code.toByte() } + data) }
-                            }
+                    }
+                    if (degreesResult.isFailure()) {
+                        println("CameraDegrees write error: ${degreesResult.errorOrNull()?.message}")
+                        return@writeJob
+                    }
+                    // Write Video
+                    val cameraWriteJob = async(Dispatchers.IO) {
+                        runCatching {
+                            cameraXAnalysisResult.consumeEach { data -> bos.writeSuspend(ByteArray(1) { RemoteDataType.Video.code.toByte() } + data) }
                         }
+                    }
 
-                        // Write Audio
-                        val audioWriteJob = async(Dispatchers.IO) {
-                            runCatching {
-                                audioRecordResult.consumeEach { data -> bos.writeSuspend(ByteArray(1) { RemoteDataType.Audio.code.toByte() } + data) }
-                            }
+                    // Write Audio
+                    val audioWriteJob = async(Dispatchers.IO) {
+                        runCatching {
+                            audioRecordResult.consumeEach { data -> bos.writeSuspend(ByteArray(1) { RemoteDataType.Audio.code.toByte() } + data) }
                         }
-                        val cameraWriteResult = cameraWriteJob.await()
-                        if (cameraWriteResult.isFailure()) {
-                            println("Camera data write error: ${cameraWriteResult.errorOrNull()}")
-                            cameraWriteResult.errorOrNull()?.printStackTrace()
-                        }
-                        val audioWriteResult = audioWriteJob.await()
-                        if (audioWriteResult.isFailure()) {
-                            println("Camera data write error: ${audioWriteResult.errorOrNull()}")
-                            audioWriteResult.errorOrNull()?.printStackTrace()
-                        }
-                    } catch (e: Throwable) {
-                        Result.failure<Unit>(e)
+                    }
+                    val cameraWriteResult = cameraWriteJob.await()
+                    if (cameraWriteResult.isFailure()) {
+                        println("Camera data write error: ${cameraWriteResult.errorOrNull()}")
+                        cameraWriteResult.errorOrNull()?.printStackTrace()
+                    }
+                    val audioWriteResult = audioWriteJob.await()
+                    if (audioWriteResult.isFailure()) {
+                        println("Camera data write error: ${audioWriteResult.errorOrNull()}")
+                        audioWriteResult.errorOrNull()?.printStackTrace()
                     }
                 }
                 readJob.join()
                 writeJob.join()
             }
         } finally {
-            withContext(Dispatchers.Main) {
-                Toast.makeText(
-                    this@RemoteVideoActivity,
-                    "Connection has closed.",
-                    Toast.LENGTH_SHORT
-                ).show()
+            if (isActive) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(
+                        this@RemoteVideoActivity,
+                        "Connection has closed.",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
             }
             client.close()
             serverSocket?.close()

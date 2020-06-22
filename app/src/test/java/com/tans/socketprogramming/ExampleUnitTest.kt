@@ -79,14 +79,30 @@ class ExampleUnitTest {
 
     @Test
     fun coroutineTest() = runBlocking {
+
         val job = launch {
             try {
-                blockToSuspend {
-                    Thread.sleep(Long.MAX_VALUE)
+                val job = launch {
+                    val job1 = async {
+                        runCatching {
+                            blockToSuspend {
+                                Thread.sleep(Long.MAX_VALUE)
+                            }
+                        }
+                    }
+                    val job2 = async {
+                        runCatching {
+                            blockToSuspend {
+                                Thread.sleep(5000)
+                            }
+                        }
+                    }
+                    job1.await()
+                    job2.await()
                 }
-                println("Sleep finish.")
+                job.join()
             } finally {
-                println("Do finally!!!")
+                println("Do finally..")
             }
         }
         delay(2000)
