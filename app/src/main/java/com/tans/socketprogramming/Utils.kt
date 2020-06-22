@@ -24,61 +24,103 @@ import java.nio.ByteBuffer
  * date: 2020/5/19
  */
 
-suspend fun ServerSocket.acceptSuspend(workDispatcher: CoroutineDispatcher = Dispatchers.IO): Socket? {
-    return try {
-        blockToSuspend(workDispatcher) { accept() }
-    } catch (e: SocketException) {
-        println("ServerSocket accept error: $e")
-        null
+sealed class Result<T> {
+
+    abstract fun isFailure(): Boolean
+    abstract fun isSuccess(): Boolean
+    abstract fun resultOrNull(): T?
+    abstract fun errorOrNull(): Throwable?
+
+    class Success<T>(private val result: T) : Result<T>() {
+        override fun isFailure(): Boolean = false
+
+        override fun isSuccess(): Boolean = true
+
+        override fun resultOrNull(): T? = result
+
+        override fun errorOrNull(): Throwable? = null
+
+    }
+
+    class Failure<T>(private val error: Throwable) : Result<T>() {
+        override fun isFailure(): Boolean = true
+
+        override fun isSuccess(): Boolean = false
+
+        override fun resultOrNull(): T? = null
+
+        override fun errorOrNull(): Throwable? = error
+    }
+
+    companion object {
+        fun <T> success(data: T): Success<T> = Success(data)
+
+        fun <T> failure(e: Throwable): Failure<T> = Failure(e)
     }
 }
 
-suspend fun ServerSocket.bindSuspend(endPoint: InetSocketAddress, backlog: Int, workDispatcher: CoroutineDispatcher = Dispatchers.IO): Boolean = try {
+inline fun <T, R> T.runCatching(block: T.() -> R): Result<R> = try {
+    Result.success(block())
+} catch (e: Throwable) {
+    Result.failure(e)
+}
+
+suspend fun ServerSocket.acceptSuspend(workDispatcher: CoroutineDispatcher = Dispatchers.IO): Result<Socket> {
+    return try {
+        val socket = blockToSuspend(workDispatcher) { accept() }
+        Result.success(socket)
+    } catch (e: SocketException) {
+        println("ServerSocket accept error: $e")
+        Result.failure(e)
+    }
+}
+
+suspend fun ServerSocket.bindSuspend(endPoint: InetSocketAddress, backlog: Int, workDispatcher: CoroutineDispatcher = Dispatchers.IO): Result<Unit> = try {
     blockToSuspend(workDispatcher) { bind(endPoint, backlog) }
-    true
+    Result.success(Unit)
 } catch (e: Throwable) {
     println("ServerSocket bind error: $e")
-    false
+    Result.failure(e)
 }
 
 suspend fun Socket.connectSuspend(workDispatcher: CoroutineDispatcher = Dispatchers.IO,
                                   endPoint: InetSocketAddress,
-                                  timeout: Int = CONNECT_TIMEOUT): Boolean = try {
+                                  timeout: Int = CONNECT_TIMEOUT): Result<Unit> = try {
     blockToSuspend(workDispatcher) { connect(endPoint, timeout) }
-    true
+    Result.success(Unit)
 } catch (t: Throwable) {
     println("Socket connect error: $t")
-    false
+    Result.failure(t)
 }
 
-suspend fun DatagramSocket.bindSuspend(endPoint: InetSocketAddress, workDispatcher: CoroutineDispatcher = Dispatchers.IO): Boolean = try {
+suspend fun DatagramSocket.bindSuspend(endPoint: InetSocketAddress, workDispatcher: CoroutineDispatcher = Dispatchers.IO): Result<Unit> = try {
     blockToSuspend(workDispatcher) {
         bind(endPoint)
     }
-    true
+    Result.success(Unit)
 } catch (e: Throwable) {
     e.printStackTrace()
-    false
+    Result.failure(e)
 }
 
-suspend fun DatagramSocket.receiveSuspend(packet: DatagramPacket, workDispatcher: CoroutineDispatcher = Dispatchers.IO): Boolean = try {
+suspend fun DatagramSocket.receiveSuspend(packet: DatagramPacket, workDispatcher: CoroutineDispatcher = Dispatchers.IO): Result<Unit> = try {
     blockToSuspend(workDispatcher) {
         receive(packet)
     }
-    true
+    Result.success(Unit)
 } catch (e: Throwable) {
     e.printStackTrace()
-    false
+    Result.failure(e)
 }
 
-suspend fun DatagramSocket.sendSuspend(packet: DatagramPacket, workDispatcher: CoroutineDispatcher = Dispatchers.IO): Boolean = try {
+suspend fun DatagramSocket.sendSuspend(packet: DatagramPacket, workDispatcher: CoroutineDispatcher = Dispatchers.IO): Result<Unit> = try {
     blockToSuspend(workDispatcher) {
         send(packet)
     }
-    true
+    Result.success(Unit)
 } catch (e: Throwable) {
     e.printStackTrace()
-    false
+    Result.failure(e)
 }
 
 suspend fun <T> blockToSuspend(workDispatcher: CoroutineDispatcher = Dispatchers.IO,

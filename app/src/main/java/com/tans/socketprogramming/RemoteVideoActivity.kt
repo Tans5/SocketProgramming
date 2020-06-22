@@ -98,13 +98,21 @@ class RemoteVideoActivity : BaseActivity() {
         audioRecord.startRecording()
         launch {
             while (audioRecord.state == AudioRecord.STATE_INITIALIZED) {
-                val job = launch(Dispatchers.IO) {
-                    val result = ByteArray(AUDIO_BUFFER_SIZE)
-                    audioRecord.readWithoutRemain(result)
-                    println("Local Audio: ${result.size}")
-                    audioRecordResult.send(result)
+                val job = async(Dispatchers.IO) {
+                    runCatching {
+                        val result = ByteArray(AUDIO_BUFFER_SIZE)
+                        audioRecord.readWithoutRemain(result)
+                        println("Local Audio: ${result.size}")
+                        audioRecordResult.send(result)
+                        Result.success(Unit)
+                    }
                 }
-                job.join()
+                val result = job.await()
+                if (result.isFailure()) {
+                    println("Read MIC data error: ${result.errorOrNull()}")
+                    result.errorOrNull()?.printStackTrace()
+                    break
+                }
             }
         }
     }
@@ -133,14 +141,14 @@ class RemoteVideoActivity : BaseActivity() {
     suspend fun serverListen(): Pair<Socket, ServerSocket> {
         val connectJob = async(Dispatchers.IO) {
             val serverSocket = ServerSocket()
-            val hasBind = serverSocket.bindSuspend(
+            val bindResult = serverSocket.bindSuspend(
                 InetSocketAddress(null as InetAddress?, VIDEO_PORT),
                 MAX_CONNECT
             )
-            if (hasBind) {
-                val client = serverSocket.acceptSuspend()
-                if (client != null) {
-                    client to serverSocket
+            if (bindResult.isSuccess()) {
+                val acceptResult = serverSocket.acceptSuspend()
+                if (acceptResult.isSuccess()) {
+                    acceptResult.resultOrNull()!! to serverSocket
                 } else {
                     serverSocket.close()
                     serverListen()
@@ -158,7 +166,7 @@ class RemoteVideoActivity : BaseActivity() {
             val client = Socket()
             val endPoint = InetSocketAddress(serverAddr, VIDEO_PORT)
             val connectResult = client.connectSuspend(endPoint = endPoint)
-            if (connectResult) {
+            if (connectResult.isSuccess()) {
                 client
             } else {
                 client.close()
@@ -206,11 +214,11 @@ class RemoteVideoActivity : BaseActivity() {
                                         }
                                     }
                                 }
-                                if (result.isFailure) {
-                                    result.exceptionOrNull()?.printStackTrace()
+                                if (result.isFailure()) {
+                                    result.errorOrNull()?.printStackTrace()
                                     false
                                 } else {
-                                    result.getOrDefault(false)
+                                    result.resultOrNull()!!
                                 }
                             }
                             if (!job.await()) {
@@ -218,31 +226,44 @@ class RemoteVideoActivity : BaseActivity() {
                             }
                         }
                     }
-                    if (result.isFailure) result.exceptionOrNull()?.printStackTrace()
+                    if (result.isFailure()) {
+                        println("Read remote data error: ${result.errorOrNull()?.message}")
+                        result.errorOrNull()?.printStackTrace()
+                    }
                 }
 
                 // Write
                 val writeJob = launch(Dispatchers.IO) {
-                    val result = runCatching {
+                    try {
                         val bos = client.getOutputStream()
                         val degrees = cameraDegrees.asFlow().first()
                         bos.write(degrees.toByteArray())
-
                         // Write Video
-                        launch(Dispatchers.IO) {
+                        val cameraWriteJob = async(Dispatchers.IO) {
                             runCatching {
                                 cameraXAnalysisResult.consumeEach { data -> bos.write(ByteArray(1) { RemoteDataType.Video.code.toByte() } + data) }
                             }
                         }
 
                         // Write Audio
-                        launch(Dispatchers.IO) {
+                        val audioWriteJob = async(Dispatchers.IO) {
                             runCatching {
                                 audioRecordResult.consumeEach { data -> bos.write(ByteArray(1) { RemoteDataType.Audio.code.toByte() } + data) }
                             }
                         }
+                        val cameraWriteResult = cameraWriteJob.await()
+                        if (cameraWriteResult.isFailure()) {
+                            println("Camera data write error: ${cameraWriteResult.errorOrNull()}")
+                            cameraWriteResult.errorOrNull()?.printStackTrace()
+                        }
+                        val audioWriteResult = audioWriteJob.await()
+                        if (audioWriteResult.isFailure()) {
+                            println("Camera data write error: ${audioWriteResult.errorOrNull()}")
+                            audioWriteResult.errorOrNull()?.printStackTrace()
+                        }
+                    } catch (e: Throwable) {
+                        Result.failure<Unit>(e)
                     }
-                    if (result.isFailure) result.exceptionOrNull()?.printStackTrace()
                 }
                 readJob.join()
                 writeJob.join()
@@ -266,43 +287,50 @@ class RemoteVideoActivity : BaseActivity() {
         launch(Dispatchers.IO) {
             videoDecoder.start()
             val bufferInfo = MediaCodec.BufferInfo()
-            remoteVideoData.consumeEach { bytes ->
-                val inputIndex = try {
-                    videoDecoder.dequeueInputBuffer(-1)
-                } catch (e: Throwable) {
-                    e.printStackTrace()
-                    return@consumeEach
-                }
-                if (inputIndex >= 0) {
-                    val inputBuffer = videoDecoder.getInputBuffer(inputIndex)
-                    if (inputBuffer != null) {
-                        inputBuffer.clear()
-                        inputBuffer.put(bytes)
-                        videoDecoder.queueInputBuffer(
-                            inputIndex,
-                            0,
-                            bytes.size,
-                            0,
-                            0
-                        )
-                    }
-                    val outputIndex = videoDecoder.dequeueOutputBuffer(bufferInfo, 0)
-                    if (outputIndex >= 0) {
-                        videoDecoder.releaseOutputBuffer(outputIndex, true)
-                        println("Has decode remote data: ${bytes.size}")
-                    } else {
-                        println("Decode remote data fail: ${bytes.size}")
+            val decodeResult = runCatching {
+                remoteVideoData.consumeEach { bytes ->
+                    val inputIndex = videoDecoder.dequeueInputBuffer(-1)
+                    if (inputIndex >= 0) {
+                        val inputBuffer = videoDecoder.getInputBuffer(inputIndex)
+                        if (inputBuffer != null) {
+                            inputBuffer.clear()
+                            inputBuffer.put(bytes)
+                            videoDecoder.queueInputBuffer(
+                                inputIndex,
+                                0,
+                                bytes.size,
+                                0,
+                                0
+                            )
+                        }
+                        val outputIndex = videoDecoder.dequeueOutputBuffer(bufferInfo, 0)
+                        if (outputIndex >= 0) {
+                            videoDecoder.releaseOutputBuffer(outputIndex, true)
+                            println("Has decode remote data: ${bytes.size}")
+                        } else {
+                            println("Decode remote data fail: ${bytes.size}")
+                        }
                     }
                 }
+            }
+            if (decodeResult.isFailure()) {
+                println("Decode remote data error: ${decodeResult.errorOrNull()}")
+                decodeResult.errorOrNull()?.printStackTrace()
             }
         }
 
         // Play Remote Audio
         launch(Dispatchers.IO) {
-            audioTrack.play()
-            remoteAudioData.consumeEach {
-                println("Receive Remote Audio: ${it.size}")
-                audioTrack.write(it, 0, AUDIO_BUFFER_SIZE)
+            val remoteAudioPlayResult = runCatching {
+                audioTrack.play()
+                remoteAudioData.consumeEach {
+                    println("Receive Remote Audio: ${it.size}")
+                    audioTrack.write(it, 0, AUDIO_BUFFER_SIZE)
+                }
+            }
+            if (remoteAudioPlayResult.isFailure()) {
+                println("Decode remote audio error: ${remoteAudioPlayResult.errorOrNull()}")
+                remoteAudioPlayResult.errorOrNull()?.printStackTrace()
             }
         }
     }
@@ -398,7 +426,7 @@ class RemoteVideoActivity : BaseActivity() {
                         params.putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0)
                         videoEncoder.setParameters(params)
                     }
-                    if (result.isFailure) { break }
+                    if (result.isFailure()) { break }
                 }
             }
             while (true) {
@@ -417,8 +445,8 @@ class RemoteVideoActivity : BaseActivity() {
                             }
                         }
                     }
-                    if (result.isFailure) {
-                        result.exceptionOrNull()?.printStackTrace()
+                    if (result.isFailure()) {
+                        result.errorOrNull()?.printStackTrace()
                         isActive
                     } else {
                         true

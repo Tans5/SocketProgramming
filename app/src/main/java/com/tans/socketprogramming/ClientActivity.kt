@@ -96,8 +96,8 @@ class ClientActivity : BaseActivity() {
 //                }
 //            }
             val socket = DatagramSocket(null)
-            val hasBind = socket.bindSuspend(InetSocketAddress(BROADCAST_RECEIVE_PORT))
-            if (hasBind) {
+            val bindResult = socket.bindSuspend(InetSocketAddress(BROADCAST_RECEIVE_PORT))
+            if (bindResult.isSuccess()) {
                 socket.use {
                     while (true) {
                         val job = async(Dispatchers.IO) {
@@ -108,7 +108,7 @@ class ClientActivity : BaseActivity() {
                                 BROADCAST_BUFFER_SIZE,
                                 InetSocketAddress(BROADCAST_SEND_PORT)
                             )
-                            if (socket.receiveSuspend(packet)) {
+                            if (socket.receiveSuspend(packet).isSuccess()) {
                                 val len = result.slice(0 until 4).toByteArray().toInt()
                                 val serverName =
                                     result.slice(4 until len + 4).toByteArray()
@@ -162,15 +162,24 @@ class ClientActivity : BaseActivity() {
     suspend fun tryToConnectServer(server: ServerInfoModel): Boolean {
         val deferred = async(Dispatchers.IO) {
             val socket = Socket()
-            val result = socket.connectSuspend(endPoint = InetSocketAddress(server.serverAddress, CONFIRM_PORT))
-            if (result) {
+            val connectResult = socket.connectSuspend(endPoint = InetSocketAddress(server.serverAddress, CONFIRM_PORT))
+            if (connectResult.isSuccess()) {
                 socket.use {
-                    val writer = BufferedWriter(OutputStreamWriter(socket.getOutputStream()))
-                    val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
-                    writer.write("${Build.BRAND} ${Build.MODEL}\n")
-                    writer.flush()
-                    val accept = reader.readLine()
-                    accept == true.toString()
+                    val readWriteResult = runCatching {
+                        val writer = BufferedWriter(OutputStreamWriter(socket.getOutputStream()))
+                        val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+                        writer.write("${Build.BRAND} ${Build.MODEL}\n")
+                        writer.flush()
+                        val accept = reader.readLine()
+                        accept == true.toString()
+                    }
+                    if (readWriteResult.isFailure()) {
+                        println("Try connect to server ReadWrite error: ${readWriteResult.errorOrNull()}")
+                        readWriteResult.errorOrNull()?.printStackTrace()
+                        false
+                    } else {
+                        true
+                    }
                 }
             } else {
                 false

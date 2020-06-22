@@ -28,26 +28,46 @@ class ServerActivity : BaseActivity() {
     fun waitClientConnect(): Job {
         return launch(Dispatchers.IO) {
             ServerSocket().use { serverSocket ->
-                serverSocket.bindSuspend(InetSocketAddress(null as InetAddress?, CONFIRM_PORT), MAX_CONNECT)
-                val client = serverSocket.acceptSuspend()
-                client?.use {
-                    val reader = BufferedReader(InputStreamReader(it.getInputStream()))
-                    val clientName = reader.readLine()
-                    val clientAddress = it.inetAddress
-                    val result = withContext(Dispatchers.Main) {
-                        alertDialog("Connect Request", "Accept $clientName(${clientAddress.hostAddress})")
-                    }
-                    val writer = BufferedWriter(OutputStreamWriter(it.getOutputStream()))
-                    writer.write(result.toString() + '\n')
-                    writer.flush()
-                    if (!result) {
-                        waitClientConnect()
-                    } else {
-                        withContext(Dispatchers.Main) {
-                            startActivity(RemoteVideoActivity.createServerIntent(this@ServerActivity, RemoteVideoActivity.Companion.ClientInfo(
-                                clientName, clientAddress)))
-                            overridePendingTransition(0, 0)
-                            finish()
+                val bindResult = serverSocket.bindSuspend(InetSocketAddress(null as InetAddress?, CONFIRM_PORT), MAX_CONNECT)
+                val acceptResult = serverSocket.acceptSuspend()
+                if (bindResult.isFailure() || acceptResult.isFailure()) {
+                    println("Wait client connect error: ${bindResult.errorOrNull()?.toString().orEmpty()}${acceptResult.errorOrNull()?.toString().orEmpty()}")
+                    waitClientConnect().join()
+                } else {
+                    acceptResult.resultOrNull()!!.use {
+                        val reader = BufferedReader(InputStreamReader(it.getInputStream()))
+                        val readWriteResult = runCatching {
+                            val clientName = reader.readLine()
+                            val clientAddress = it.inetAddress
+                            val result = withContext(Dispatchers.Main) {
+                                alertDialog(
+                                    "Connect Request",
+                                    "Accept $clientName(${clientAddress.hostAddress})"
+                                )
+                            }
+                            val writer = BufferedWriter(OutputStreamWriter(it.getOutputStream()))
+                            writer.write(result.toString() + '\n')
+                            writer.flush()
+                            if (!result) {
+                                waitClientConnect()
+                            } else {
+                                withContext(Dispatchers.Main) {
+                                    startActivity(
+                                        RemoteVideoActivity.createServerIntent(
+                                            this@ServerActivity,
+                                            RemoteVideoActivity.Companion.ClientInfo(
+                                                clientName, clientAddress
+                                            )
+                                        )
+                                    )
+                                    overridePendingTransition(0, 0)
+                                    finish()
+                                }
+                            }
+                        }
+                        if (readWriteResult.isFailure()) {
+                            println("Read Write client data error: ${readWriteResult.errorOrNull()?.message}")
+                            readWriteResult.errorOrNull()?.printStackTrace()
                         }
                     }
                 }
@@ -86,8 +106,8 @@ class ServerActivity : BaseActivity() {
 //                }.join()
 //            }
             val socket = DatagramSocket(null)
-            val hasBind = socket.bindSuspend(InetSocketAddress(BROADCAST_SEND_PORT))
-            if (hasBind) {
+            val bindResult = socket.bindSuspend(InetSocketAddress(BROADCAST_SEND_PORT))
+            if (bindResult.isSuccess()) {
                 socket.use {
                     val data = "${Build.BRAND} ${Build.MODEL}".toByteArray(Charsets.UTF_8)
                     val dataLen = data.size.toByteArray()
@@ -103,7 +123,7 @@ class ServerActivity : BaseActivity() {
                                     BROADCAST_RECEIVE_PORT
                                 )
                             )
-                            socket.sendSuspend(packet)
+                            socket.sendSuspend(packet).isSuccess()
                         }
                         if (!job.await() && !isActive) {
                             break
