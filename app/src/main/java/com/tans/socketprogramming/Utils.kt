@@ -60,6 +60,16 @@ sealed class Result<T> {
     }
 }
 
+fun <T, R> Result<T>.map(f: Unit.(T) -> Result<R>): Result<R> = map(Unit, f)
+
+inline fun <T, R, Receive> Result<T>.map(receive: Receive, f: Receive.(T) -> Result<R>): Result<R> {
+    return if (isSuccess()) {
+        receive.f(resultOrNull()!!)
+    } else {
+        Result.failure(errorOrNull()!!)
+    }
+}
+
 inline fun <T, R> T.runCatching(block: T.() -> R): Result<R> = try {
     Result.success(block())
 } catch (e: Throwable) {

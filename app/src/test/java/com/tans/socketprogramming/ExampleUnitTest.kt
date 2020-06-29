@@ -7,9 +7,7 @@ import org.junit.Assert.*
 import java.io.PipedInputStream
 import java.io.PipedOutputStream
 import java.math.BigInteger
-import java.net.InetAddress
-import java.net.InetSocketAddress
-import java.net.ServerSocket
+import java.net.*
 import kotlin.coroutines.ContinuationInterceptor
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
@@ -107,5 +105,18 @@ class ExampleUnitTest {
         }
         delay(2000)
         job.cancel()
+    }
+
+    @Test
+    fun udpSocketTest() = runBlocking {
+        val localAddr = InetAddress.getLocalHost()
+        val datagramSocket = DatagramSocket(null)
+        val bytes = ByteArray(1024)
+        val dataPackage = DatagramPacket(bytes, 0, bytes.size, InetSocketAddress(1997))
+        val result = datagramSocket.bindSuspend(InetSocketAddress(localAddr,1999))
+            .map(this) { datagramSocket.receiveSuspend(dataPackage) }
+        if (result.isSuccess()) {
+            println("Remote Address: ${dataPackage.address.hostAddress}")
+        }
     }
 }
