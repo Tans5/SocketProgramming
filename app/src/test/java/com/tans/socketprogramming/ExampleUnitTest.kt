@@ -118,5 +118,27 @@ class ExampleUnitTest {
         if (result.isSuccess()) {
             println("Remote Address: ${dataPackage.address.hostAddress}")
         }
+        datagramSocket.close()
+    }
+
+    @Test
+    fun udpMulticast() = runBlocking {
+        val socket = MulticastSocket(null)
+        val result = socket.bindSuspend(InetSocketAddress(InetAddress.getLocalHost(), 9999))
+            .map(this) {
+                // socket.joinGroup(InetSocketAddress(InetAddress.getByName("239.0.0.1"), 0), NetworkInterface.getByName("192.168.104.242"))
+                socket.`interface` = InetAddress.getLocalHost()
+                socket.joinGroup(InetAddress.getByName("239.0.1.1"))
+                val bytes = "Hello, World!!!".toByteArray(Charsets.UTF_8)
+                val dataPackage = DatagramPacket(bytes, 0, bytes.size, InetSocketAddress(9998))
+                socket.sendSuspend(dataPackage)
+            }
+
+        if (result.isSuccess()) {
+            println("Success")
+        } else {
+            println("Error: ${result.errorOrNull()}")
+        }
+
     }
 }
