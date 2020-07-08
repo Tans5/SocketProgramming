@@ -35,6 +35,7 @@ versions.camerax = '1.0.0-beta06'
 versions.zxing = '3.4.0'
 versions.tadapter = '0.7.0'
 versions.rxutils = "0.1.0"
+versions.kotlincroutines = "1.3.5"
 
 def view = [:]
 // androidx view
@@ -221,3 +222,11 @@ ext.deps.tadapter = tadapter
 def rxutils = [:]
 rxutils.runtime = "com.github.Tans5:RxUtils:$versions.rxutils"
 ext.deps.rxutils = rxutils
+
+
+// Kotlin coroutines
+def coroutines = [:]
+coroutines.runtime = "org.jetbrains.kotlinx:kotlinx-coroutines-core:$versions.kotlincroutines"
+coroutines.android = "org.jetbrains.kotlinx:kotlinx-coroutines-android:$versions.kotlincroutines"
+coroutines.rx = "org.jetbrains.kotlinx:kotlinx-coroutines-rx2:$versions.kotlincroutines"
+ext.deps.coroutines = coroutines

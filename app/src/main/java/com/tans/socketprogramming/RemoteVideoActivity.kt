@@ -29,6 +29,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.rx2.await
 import java.io.BufferedInputStream
 import java.io.Serializable
 import java.lang.Runnable
@@ -65,7 +66,7 @@ class RemoteVideoActivity : BaseActivity() {
             val hasPermission = RxPermissions(this@RemoteVideoActivity)
                 .request(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
                 .firstOrError()
-                .toSuspend()
+                .await()
 
             if (hasPermission) {
                 val connectResult = connectToRemoteDevice()
