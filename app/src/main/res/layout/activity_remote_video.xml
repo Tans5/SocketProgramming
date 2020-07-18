@@ -5,6 +5,7 @@
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:keepScreenOn="true"
     tools:context=".ServerActivity">
 
     <com.google.android.material.appbar.AppBarLayout

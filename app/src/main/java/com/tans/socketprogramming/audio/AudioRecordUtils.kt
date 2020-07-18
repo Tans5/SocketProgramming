@@ -4,6 +4,7 @@ import android.media.*
 import com.tans.socketprogramming.blockToSuspend
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlin.coroutines.CoroutineContext
 
 const val AUDIO_SOURCE = MediaRecorder.AudioSource.MIC
 // 44100 Hz
@@ -45,12 +46,12 @@ suspend fun AudioTrack.writeSuspend(
     bytes: ByteArray,
     offset: Int = 0,
     size: Int = bytes.size,
-    workDispatcher: CoroutineDispatcher = Dispatchers.IO
-) = blockToSuspend(workDispatcher) { write(bytes, offset, size) }
+    context: CoroutineContext = Dispatchers.IO
+) = blockToSuspend(context, { this.stop(); this.release() }) { write(bytes, offset, size) }
 
 suspend fun AudioRecord.readWithoutRemainSuspend(
     bytes: ByteArray,
     offset: Int = 0,
     len: Int = bytes.size,
-    workDispatcher: CoroutineDispatcher = Dispatchers.IO
-) = blockToSuspend(workDispatcher) { readWithoutRemain(bytes, offset, len) }
+    context: CoroutineContext = Dispatchers.IO
+) = blockToSuspend(context, { this.stop(); this.release() }) { readWithoutRemain(bytes, offset, len) }

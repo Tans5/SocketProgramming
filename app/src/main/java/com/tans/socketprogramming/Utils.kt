@@ -76,9 +76,9 @@ inline fun <T, R> T.runCatching(block: T.() -> R): Result<R> = try {
     Result.failure(e)
 }
 
-suspend fun ServerSocket.acceptSuspend(workDispatcher: CoroutineDispatcher = Dispatchers.IO): Result<Socket> {
+suspend fun ServerSocket.acceptSuspend(context: CoroutineContext = Dispatchers.IO): Result<Socket> {
     return try {
-        val socket = blockToSuspend(workDispatcher) { accept() }
+        val socket = blockToSuspend(context, { this.close() }) { accept() }
         Result.success(socket)
     } catch (e: SocketException) {
         println("ServerSocket accept error: $e")
@@ -86,26 +86,26 @@ suspend fun ServerSocket.acceptSuspend(workDispatcher: CoroutineDispatcher = Dis
     }
 }
 
-suspend fun ServerSocket.bindSuspend(endPoint: InetSocketAddress, backlog: Int, workDispatcher: CoroutineDispatcher = Dispatchers.IO): Result<Unit> = try {
-    blockToSuspend(workDispatcher) { bind(endPoint, backlog) }
+suspend fun ServerSocket.bindSuspend(endPoint: InetSocketAddress, backlog: Int, context: CoroutineContext = Dispatchers.IO): Result<Unit> = try {
+    blockToSuspend(context, { this.close() }) { bind(endPoint, backlog) }
     Result.success(Unit)
 } catch (e: Throwable) {
     println("ServerSocket bind error: $e")
     Result.failure(e)
 }
 
-suspend fun Socket.connectSuspend(workDispatcher: CoroutineDispatcher = Dispatchers.IO,
+suspend fun Socket.connectSuspend(context: CoroutineContext = Dispatchers.IO,
                                   endPoint: InetSocketAddress,
                                   timeout: Int = CONNECT_TIMEOUT): Result<Unit> = try {
-    blockToSuspend(workDispatcher) { connect(endPoint, timeout) }
+    blockToSuspend(context, { this.close() }) { connect(endPoint, timeout) }
     Result.success(Unit)
 } catch (t: Throwable) {
     println("Socket connect error: $t")
     Result.failure(t)
 }
 
-suspend fun DatagramSocket.bindSuspend(endPoint: InetSocketAddress, workDispatcher: CoroutineDispatcher = Dispatchers.IO): Result<Unit> = try {
-    blockToSuspend(workDispatcher) {
+suspend fun DatagramSocket.bindSuspend(endPoint: InetSocketAddress, context: CoroutineContext = Dispatchers.IO): Result<Unit> = try {
+    blockToSuspend(context, { this.close() }) {
         bind(endPoint)
     }
     Result.success(Unit)
@@ -114,8 +114,8 @@ suspend fun DatagramSocket.bindSuspend(endPoint: InetSocketAddress, workDispatch
     Result.failure(e)
 }
 
-suspend fun DatagramSocket.receiveSuspend(packet: DatagramPacket, workDispatcher: CoroutineDispatcher = Dispatchers.IO): Result<Unit> = try {
-    blockToSuspend(workDispatcher) {
+suspend fun DatagramSocket.receiveSuspend(packet: DatagramPacket, context: CoroutineContext = Dispatchers.IO): Result<Unit> = try {
+    blockToSuspend(context, { this.close() }) {
         receive(packet)
     }
     Result.success(Unit)
@@ -124,8 +124,8 @@ suspend fun DatagramSocket.receiveSuspend(packet: DatagramPacket, workDispatcher
     Result.failure(e)
 }
 
-suspend fun DatagramSocket.sendSuspend(packet: DatagramPacket, workDispatcher: CoroutineDispatcher = Dispatchers.IO): Result<Unit> = try {
-    blockToSuspend(workDispatcher) {
+suspend fun DatagramSocket.sendSuspend(packet: DatagramPacket, context: CoroutineContext = Dispatchers.IO): Result<Unit> = try {
+    blockToSuspend(context, { this.close() }) {
         send(packet)
     }
     Result.success(Unit)
@@ -134,24 +134,27 @@ suspend fun DatagramSocket.sendSuspend(packet: DatagramPacket, workDispatcher: C
     Result.failure(e)
 }
 
-suspend fun <T> blockToSuspend(workDispatcher: CoroutineDispatcher = Dispatchers.IO,
+suspend fun <T> blockToSuspend(blockContext: CoroutineContext = Dispatchers.IO,
+                               cancel: () -> Unit = {},
                                block: () -> T): T = suspendCancellableCoroutine { cont ->
     val interceptor = cont.context[ContinuationInterceptor]
-    if (interceptor is CoroutineDispatcher) {
-        workDispatcher.dispatch(cont.context, Runnable {
+    val blockInterceptor = blockContext[ContinuationInterceptor]
+    if (interceptor is CoroutineDispatcher && blockInterceptor is CoroutineDispatcher) {
+        blockInterceptor.dispatch(cont.context, Runnable {
             try {
                 val result = block()
-                interceptor.dispatch(cont.context, Runnable { cont.resume(result) })
+                interceptor.dispatch(cont.context, Runnable { if (cont.isActive) cont.resume(result) })
             } catch (e: Throwable) {
-                interceptor.dispatch(cont.context, Runnable { cont.resumeWithException(e) })
+                interceptor.dispatch(cont.context, Runnable { if (cont.isActive) cont.resumeWithException(e) })
             }
         })
     } else {
         cont.resumeWithException(Throwable("Can't find ContinuaDispatcher"))
     }
+    cont.invokeOnCancellation { cancel() }
 }
 
-@UseExperimental(ExperimentalUnsignedTypes::class)
+@OptIn(ExperimentalUnsignedTypes::class)
 fun Int.toIpAddr(isRevert: Boolean = true): IntArray = IntArray(4) { i ->
     if (isRevert) {
         (this shr 8 * i and 0xff).toUByte().toInt()
@@ -271,8 +274,8 @@ suspend fun InputStream.readWithoutRemainSuspend(
     bytes: ByteArray,
     offset: Int = 0,
     len: Int = bytes.size,
-    workDispatcher: CoroutineDispatcher = Dispatchers.IO
-) = blockToSuspend(workDispatcher) {
+    context: CoroutineContext = Dispatchers.IO
+) = blockToSuspend(context, { this.close() }) {
     readWithoutRemain(bytes, offset, len)
 }
 
@@ -290,13 +293,13 @@ suspend fun OutputStream.writeSuspend(
     bytes: ByteArray,
     offset: Int = 0,
     len: Int = bytes.size,
-    workDispatcher: CoroutineDispatcher = Dispatchers.IO
-) = blockToSuspend(workDispatcher) {
+    context: CoroutineContext = Dispatchers.IO
+) = blockToSuspend(context, { this.close() }) {
     write(bytes, offset, len)
 }
 
-suspend fun BufferedReader.readLineSuspend(workDispatcher: CoroutineDispatcher = Dispatchers.IO) =
-    blockToSuspend(workDispatcher) { readLine() ?: "" }
+suspend fun BufferedReader.readLineSuspend(context: CoroutineContext = Dispatchers.IO) =
+    blockToSuspend(context, { this.close() }) { readLine() ?: "" }
 
-suspend fun BufferedWriter.writeSuspend(s: String, workDispatcher: CoroutineDispatcher = Dispatchers.IO) =
-    blockToSuspend(workDispatcher) { write(s); flush() }
+suspend fun BufferedWriter.writeSuspend(s: String, context: CoroutineContext = Dispatchers.IO) =
+    blockToSuspend(context, { this.close() }) { write(s); flush() }

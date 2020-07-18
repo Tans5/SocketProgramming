@@ -1,10 +1,8 @@
 package com.tans.socketprogramming
 
-import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
-import androidx.core.content.getSystemService
 import com.tans.socketprogramming.databinding.ServerItemLayoutBinding
 import com.tans.tadapter.adapter.DifferHandler
 import com.tans.tadapter.spec.SimpleAdapterSpec
@@ -15,8 +13,11 @@ import kotlinx.coroutines.channels.BroadcastChannel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.rx2.rxObservable
+import kotlinx.coroutines.rx2.rxSingle
 import java.io.*
 import java.net.*
+import kotlin.math.min
 
 /**
  *
@@ -25,8 +26,11 @@ import java.net.*
  */
 class ClientActivity : BaseActivity() {
 
+    @ExperimentalCoroutinesApi
     val serversChannel: BroadcastChannel<List<ServerInfoModel>> = BroadcastChannel(Channel.CONFLATED)
 
+    @FlowPreview
+    @ExperimentalCoroutinesApi
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_client)
@@ -34,6 +38,7 @@ class ClientActivity : BaseActivity() {
 
         launch {
             serversChannel.send(emptyList())
+            // Init servers adapter
             services_rv.adapter = SimpleAdapterSpec<ServerInfoModel, ServerItemLayoutBinding>(
                 layoutId = R.layout.server_item_layout,
                 bindData = { _, data, binding -> binding.data = data},
@@ -42,7 +47,7 @@ class ClientActivity : BaseActivity() {
                     contentTheSame = { a, b -> a.serverName == b.serverName }),
                 itemClicks = listOf { binding, _ ->
                     binding.root to { _, data ->
-                        asyncAsSingle {
+                        rxSingle(Dispatchers.Main) {
                             val loadingDialog = createLoadingDialog()
                             loadingDialog.show()
                             val result = tryToConnectServer(data)
@@ -61,6 +66,8 @@ class ClientActivity : BaseActivity() {
                     }
                 }
             ).toAdapter()
+
+            // Remove no response servers.
             launch {
                 while (true) {
                     delay(CHECK_SERVERS_DURATION)
@@ -70,6 +77,8 @@ class ClientActivity : BaseActivity() {
         }
     }
 
+    @FlowPreview
+    @ExperimentalCoroutinesApi
     fun receiveBroadcast(): Job {
         return launch(Dispatchers.IO) {
 //            ServerSocket().use { serverSocket ->
@@ -111,7 +120,7 @@ class ClientActivity : BaseActivity() {
                             if (socket.receiveSuspend(packet).isSuccess()) {
                                 val len = result.slice(0 until 4).toByteArray().toInt()
                                 val serverName =
-                                    result.slice(4 until len + 4).toByteArray()
+                                    result.slice(4 until min(len + 4, BROADCAST_BUFFER_SIZE - 4)).toByteArray()
                                         .toString(Charsets.UTF_8)
                                 val serverAddress = packet.address
                                 println("Find Server: $serverName, addr: ${serverAddress.hostAddress}")
@@ -142,6 +151,8 @@ class ClientActivity : BaseActivity() {
         }
     }
 
+    @ExperimentalCoroutinesApi
+    @FlowPreview
     suspend fun updateServerChannel(serverInfoModel: ServerInfoModel) {
         val lastServers = serversChannel.asFlow().firstOrNull() ?: emptyList()
         val needUpdateServer = lastServers.find { it.serverAddress.hostAddress == serverInfoModel.serverAddress.hostAddress }
@@ -153,6 +164,8 @@ class ClientActivity : BaseActivity() {
         serversChannel.send(newServers)
     }
 
+    @ExperimentalCoroutinesApi
+    @FlowPreview
     suspend fun removeOutOfDateServers() {
         val lastServers = serversChannel.asFlow().firstOrNull() ?: emptyList()
         val newServers = lastServers.filter { (System.currentTimeMillis() - it.updateTime) < SERVER_KEEP_ALIVE_TIME }

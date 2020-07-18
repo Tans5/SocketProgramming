@@ -52,6 +52,7 @@ class RemoteVideoActivity : BaseActivity() {
     val remoteVideoData: Channel<ByteArray> = Channel(Channel.BUFFERED)
     val remoteAudioData: Channel<ByteArray> = Channel(Channel.BUFFERED)
 
+    @ExperimentalCoroutinesApi
     val cameraDegrees: BroadcastChannel<Int> = BroadcastChannel(Channel.CONFLATED)
 
     val videoEncoder: MediaCodec by lazy { createDefaultEncodeMediaCodec() }
@@ -59,6 +60,8 @@ class RemoteVideoActivity : BaseActivity() {
 
     val audioRecord: AudioRecord by lazy { createDefaultAudioRecord() }
 
+    @FlowPreview
+    @ExperimentalCoroutinesApi
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_remote_video)
@@ -80,6 +83,7 @@ class RemoteVideoActivity : BaseActivity() {
         }
     }
 
+    @ExperimentalCoroutinesApi
     suspend fun startCamera() {
         whenRemotePreviewSurfaceReady()
         // Init camera
@@ -174,6 +178,8 @@ class RemoteVideoActivity : BaseActivity() {
         return connectJob.await()
     }
 
+    @FlowPreview
+    @ExperimentalCoroutinesApi
     fun writeAndReadRemoteData(client: Socket, serverSocket: ServerSocket? = null) = launch(Dispatchers.IO) {
         try {
             client.use {
@@ -283,6 +289,7 @@ class RemoteVideoActivity : BaseActivity() {
         }
     }
 
+    @ExperimentalCoroutinesApi
     fun decodeRemoteData() = launch(Dispatchers.IO) {
 
         // Decode video
@@ -378,6 +385,7 @@ class RemoteVideoActivity : BaseActivity() {
         }
     }
 
+    @ExperimentalCoroutinesApi
     @SuppressLint("RestrictedApi")
     fun createPreview(): Preview {
         val preview = Preview.Builder()
@@ -464,6 +472,7 @@ class RemoteVideoActivity : BaseActivity() {
         return preview
     }
 
+    @ExperimentalCoroutinesApi
     override fun onDestroy() {
         cameraXAnalysisResult.cancel()
         audioRecordResult.cancel()
@@ -471,14 +480,14 @@ class RemoteVideoActivity : BaseActivity() {
         remoteAudioData.cancel()
         cameraDegrees.cancel()
         super.onDestroy()
-        videoEncoder.stop()
-        videoEncoder.release()
-        videoDecoder.stop()
-        videoDecoder.release()
-        audioRecord.stop()
-        audioRecord.release()
-        audioTrack.stop()
-        audioTrack.release()
+//        videoEncoder.stop()
+//        videoEncoder.release()
+//        videoDecoder.stop()
+//        videoDecoder.release()
+//        audioRecord.stop()
+//        audioRecord.release()
+//        audioTrack.stop()
+//        audioTrack.release()
     }
 
     fun rotationRemoteView(degrees: Int) {
@@ -488,8 +497,8 @@ class RemoteVideoActivity : BaseActivity() {
         val cx = viewWidth.toFloat() / 2
         val cy = viewHeight.toFloat() / 2
         val ratio = VIDEO_WITH.toFloat() / VIDEO_HEIGHT.toFloat()
-        var scaledWidth: Int = 0
-        var scaleHeight: Int = 0
+        var scaledWidth = 0
+        var scaleHeight = 0
         if (viewWidth > viewHeight) {
             scaleHeight = viewWidth
             scaledWidth = round(viewWidth * ratio).toInt()

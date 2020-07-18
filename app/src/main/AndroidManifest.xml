@@ -30,7 +30,7 @@
         <activity android:name=".ServerActivity" />
         <activity android:name=".ClientActivity" />
         <activity android:name=".RemoteVideoActivity"
-            android:screenOrientation="portrait"/>
+            android:screenOrientation="portrait" />
         <provider
             android:authorities="com.tans.socketprogramming.fileprovider"
             android:name="androidx.core.content.FileProvider"
